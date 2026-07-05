@@ -212,7 +212,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.10 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.12 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -375,16 +375,16 @@ function buildChart(inst){
   let iMax=0,iMin=0;for(let i=1;i<n;i++){if(closes[i]>closes[iMax])iMax=i;if(closes[i]<closes[iMin])iMin=i;}
   const pkHi=closes[iMax], pkLo=closes[iMin];
 
-  const W=350,H=196,ML=36,MR=48,T=12,B=18;
-  const PR=W-MR;                                  // plot right edge
+  const W=350,H=196,ML=34,MR=34,T=12,B=18;
+  const PR=W-MR;                                  // plot right edge (symmetric margins)
   const X=i=>ML+i*(PR-ML)/(n-1), Y=v=>T+(hi-v)/(hi-lo)*(H-B-T);
   const fx=x=>(+x).toFixed(1);
+  // 배경 헤일로가 있는 텍스트 (선/영역 위에서도 읽힘)
+  const htxt=(x,y,color,anchor,size,content)=>`<text x="${x}" y="${y}" fill="${color}" font-size="${size}" font-family="monospace" text-anchor="${anchor}" paint-order="stroke" stroke="#161b22" stroke-width="2.4" stroke-linejoin="round">${content}</text>`;
   const poly=(arr,color,wd)=>{let d='';for(let i=0;i<n;i++){if(arr[i]==null)continue;d+=(d?'L':'M')+fx(X(i))+' '+fx(Y(arr[i]))+' ';}return d?`<path d="${d}" fill="none" stroke="${color}" stroke-width="${wd}" stroke-linejoin="round"/>`:'';};
-  const lblX=PR+3;
   const hline=(v,color,op)=>{if(v==null||!isFinite(v)||v<lo||v>hi)return'';const y=fx(Y(v));
     return `<line x1="${ML}" y1="${y}" x2="${PR}" y2="${y}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="${op||0.9}"/>`+
-      `<text x="${lblX}" y="${fx(+y+3)}" fill="${color}" font-size="8.5" font-family="monospace">$${v.toFixed(2)}</text>`;};
-  // 플롯 안 라벨의 anchor/좌표를 가장자리 안쪽으로 유지
+      htxt(PR-2, fx(+y-2.5), color, 'end', 8.5, '$'+v.toFixed(2));};
   const anchorFor=x=>x<ML+26?'start':(x>PR-26?'end':'middle');
 
   let svg=`<svg viewBox="0 0 ${W} ${H}" width="100%">`;
@@ -397,20 +397,21 @@ function buildChart(inst){
   svg+=`<path d="${area}" fill="#22b8a6" opacity="0.08"/>`;
   tps.forEach(v=>{if(v>=lo&&v<=hi)svg+=`<line x1="${ML}" y1="${fx(Y(v))}" x2="${PR}" y2="${fx(Y(v))}" stroke="#e0a83a" stroke-width="1" stroke-dasharray="2 4" opacity="0.45"/>`;});
   svg+=hline(tpMin,'#e0a83a');
-  svg+=hline(maThresh,'#e5534b');
+  // 포지션 없으면: 20일선 하한을 "예상 첫 진입선"(초록)으로. 보유 중이면: 하락기준(빨강)
+  svg+=hline(maThresh, open.length? '#e5534b' : '#3fb950');
   svg+=hline(nextBuy,'#3fb950');
   svg+=poly(ma,'#8b98a9',1.1);
   svg+=poly(closes,'#22b8a6',1.9);
-  // 고가/저가 마커 + 라벨 (플롯 안)
+  // 고가/저가 마커 + 라벨 (플롯 안, 헤일로)
   const mk=(i,v,label,color,dy)=>{const x=fx(X(i)),y=Y(v);
     return `<circle cx="${x}" cy="${fx(y)}" r="2.2" fill="${color}"/>`+
-      `<text x="${x}" y="${fx(y+dy)}" fill="${color}" font-size="8" font-family="monospace" text-anchor="${anchorFor(X(i))}">${label} $${v.toFixed(2)}</text>`;};
+      htxt(x, fx(y+dy), color, anchorFor(X(i)), 8, label+' $'+v.toFixed(2));};
   svg+=mk(iMax,pkHi,'고','#cbd5e1',-5);
   svg+=mk(iMin,pkLo,'저','#cbd5e1',11);
-  // 현재가 점 + 라벨
+  // 현재가 점 + 라벨 (플롯 안 우측, 헤일로)
   const cy=fx(Y(price));
   svg+=`<circle cx="${fx(X(n-1))}" cy="${cy}" r="2.8" fill="#e6edf3"/>`;
-  svg+=`<text x="${lblX}" y="${fx(+cy+3)}" fill="#e6edf3" font-size="8.5" font-family="monospace">$${price.toFixed(2)}</text>`;
+  svg+=htxt(PR-2, fx(+cy-5.5), '#e6edf3','end',8.5,'현재 $'+price.toFixed(2));
   const d0=hist[0].date, d1=hist[n-1].date;
   svg+=`<text x="${ML}" y="${H-5}" fill="#5b6675" font-size="8" font-family="monospace">${d0}</text>`;
   svg+=`<text x="${PR}" y="${H-5}" fill="#5b6675" font-size="8" font-family="monospace" text-anchor="end">${d1}</text>`;
@@ -427,18 +428,24 @@ function buildChart(inst){
       (tpMin!=null?` · <b style="color:#e0a83a">익절 ${sgn(toSell)}</b>`:'');
   }else{
     const above=maLast!=null&&price>=maLast*(1-cfg.trendBand);
-    line2=`포지션 없음 · 20일선 ${above?'<b style="color:#22b8a6">위 → 진입 가능</b>':'<b style="color:#e5534b">아래 → 대기</b>'}`;
+    const entry=maThresh!=null?` · <b style="color:#3fb950">예상 진입 $${maThresh.toFixed(2)} 이상</b>`:'';
+    line2=`포지션 없음 · 20일선 ${above?'<b style="color:#22b8a6">위 → 진입 가능</b>':'<b style="color:#e5534b">아래 → 대기</b>'}`+entry;
   }
   const info=`<div class="cinfo"><div>현재 <b>$${price.toFixed(2)}</b> · ${cfg.maWindow}일선 $${maLast!=null?maLast.toFixed(2):'—'}`+
     (vsMA!=null?` <span style="color:${vsMA>=0?'#22b8a6':'#e5534b'}">(${sgn(vsMA)})</span>`:'')+
     ` · <span class="faint">고 $${pkHi.toFixed(2)} · 저 $${pkLo.toFixed(2)}</span></div><div>${line2}</div></div>`;
 
-  const leg=`<div class="legend">
-    <span><i style="border-color:#22b8a6"></i>가격</span>
-    <span><i style="border-color:#8b98a9"></i>${cfg.maWindow}일선</span>
-    <span><i style="border-color:#3fb950"></i>매수선</span>
-    <span><i style="border-color:#e0a83a"></i>익절선</span>
-    <span><i style="border-color:#e5534b"></i>하락기준</span></div>`;
+  const leg=open.length
+    ? `<div class="legend">
+        <span><i style="border-color:#22b8a6"></i>가격</span>
+        <span><i style="border-color:#8b98a9"></i>${cfg.maWindow}일선</span>
+        <span><i style="border-color:#3fb950"></i>매수선</span>
+        <span><i style="border-color:#e0a83a"></i>익절선</span>
+        <span><i style="border-color:#e5534b"></i>하락기준</span></div>`
+    : `<div class="legend">
+        <span><i style="border-color:#22b8a6"></i>가격</span>
+        <span><i style="border-color:#8b98a9"></i>${cfg.maWindow}일선</span>
+        <span><i style="border-color:#3fb950"></i>예상 진입선</span></div>`;
   return info+svg+leg;
 }
 
