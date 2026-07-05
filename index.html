@@ -56,6 +56,9 @@
   /* chart */
   .chart{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 10px 8px;margin:12px 0}
   .chart svg{width:100%;height:auto;display:block}
+  .cinfo{font-family:var(--mono);font-size:11.5px;color:var(--muted);
+         line-height:1.6;padding:2px 4px 8px}
+  .cinfo b{color:var(--ink);font-weight:600}
   .legend{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;
           font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:6px}
   .legend i{display:inline-block;width:14px;height:0;border-top:2px solid;margin-right:4px;vertical-align:middle}
@@ -179,7 +182,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.4 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.5 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -299,7 +302,7 @@ const won=n=>'₩'+Math.round(n).toLocaleString();
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),1900);}
 function openLots(inst){return inst.tranches.filter(t=>t.status==='open').map(t=>({id:t.id,buyPrice:t.buyPriceUSD,shares:t.shares,krwCost:t.krwCost}));}
 
-/* ===== SVG 차트 + 기준선 ===== */
+/* ===== SVG 차트 + 기준선 (상세) ===== */
 function buildChart(inst){
   const cfg=inst.cfg, full=inst.priceHistory.map(h=>h.close);
   const hist=inst.priceHistory.slice(-60), closes=hist.map(h=>h.close), n=closes.length;
@@ -311,36 +314,75 @@ function buildChart(inst){
   const maLast=ma[n-1], maThresh=maLast!=null?maLast*(1-cfg.trendBand):null;
   const open=inst.tranches.filter(t=>t.status==='open');
   const tps=open.map(t=>t.buyPriceUSD*(1+cfg.tp));
+  const tpMin=tps.length?Math.min.apply(null,tps):null;
+  const totSh=open.reduce((a,t)=>a+t.shares,0), avg=totSh>0?open.reduce((a,t)=>a+t.shares*t.buyPriceUSD,0)/totSh:null;
+
   let vals=closes.concat(ma.filter(v=>v!=null));
   [price,nextBuy,maThresh].concat(tps).forEach(v=>{if(v!=null&&isFinite(v))vals.push(v);});
-  let lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals),pad=(hi-lo)*0.08||1;lo-=pad;hi+=pad;
-  const W=320,H=170,L=6,R=58,T=8,B=8;
-  const X=i=>L+i*(W-L-R)/(n-1), Y=v=>T+(hi-v)/(hi-lo)*(H-T-B);
-  const poly=(arr,color,wd)=>{let d='';for(let i=0;i<n;i++){if(arr[i]==null)continue;d+=(d?'L':'M')+X(i).toFixed(1)+' '+Y(arr[i]).toFixed(1)+' ';}return d?`<path d="${d}" fill="none" stroke="${color}" stroke-width="${wd}"/>`:'';};
-  const hline=(v,color,label,dash)=>{if(v==null||!isFinite(v)||v<lo||v>hi)return'';const y=Y(v).toFixed(1);
-    return `<line x1="${L}" y1="${y}" x2="${W-R}" y2="${y}" stroke="${color}" stroke-width="1" stroke-dasharray="${dash||'3 3'}" opacity="0.9"/>`+
-      `<text x="${W-R+3}" y="${(+y+3).toFixed(1)}" fill="${color}" font-size="9" font-family="monospace">${label} $${v.toFixed(2)}</text>`;};
-  let svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`;
-  // tp lines (모든 열린 트란셰, 라벨은 최저 1개만)
-  const tpMin=tps.length?Math.min.apply(null,tps):null;
-  tps.forEach(v=>{const y=Y(v).toFixed(1);if(v>=lo&&v<=hi)svg+=`<line x1="${L}" y1="${y}" x2="${W-R}" y2="${y}" stroke="#e0a83a" stroke-width="1" stroke-dasharray="2 4" opacity="0.5"/>`;});
-  if(tpMin!=null)svg+=hline(tpMin,'#e0a83a','익절','3 3');
-  svg+=hline(maThresh,'#e5534b','하락기준','3 3');
-  svg+=hline(nextBuy,'#3fb950','매수','3 3');
-  svg+=poly(ma,'#8b98a9',1);
-  svg+=poly(closes,'#22b8a6',1.8);
-  // 현재가 점 + 라벨
-  const cy=Y(price).toFixed(1);
-  svg+=`<circle cx="${X(n-1).toFixed(1)}" cy="${cy}" r="2.6" fill="#e6edf3"/>`;
-  svg+=`<text x="${W-R+3}" y="${(+cy+3).toFixed(1)}" fill="#e6edf3" font-size="9" font-family="monospace">현재 $${price.toFixed(2)}</text>`;
+  let lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals),pad=(hi-lo)*0.10||1;lo-=pad;hi+=pad;
+
+  const W=344,H=192,ML=34,MR=78,T=10,B=18;
+  const X=i=>ML+i*(W-MR-ML)/(n-1), Y=v=>T+(hi-v)/(hi-lo)*(H-B-T);
+  const fx=x=>(+x).toFixed(1);
+  const poly=(arr,color,wd)=>{let d='';for(let i=0;i<n;i++){if(arr[i]==null)continue;d+=(d?'L':'M')+fx(X(i))+' '+fx(Y(arr[i]))+' ';}return d?`<path d="${d}" fill="none" stroke="${color}" stroke-width="${wd}" stroke-linejoin="round"/>`:'';};
+  const lblX=W-MR+4;
+  const hline=(v,color,label,op)=>{if(v==null||!isFinite(v)||v<lo||v>hi)return'';const y=fx(Y(v));
+    return `<line x1="${ML}" y1="${y}" x2="${W-MR}" y2="${y}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="${op||0.9}"/>`+
+      `<text x="${lblX}" y="${fx(+y+3)}" fill="${color}" font-size="9" font-family="monospace">${label} $${v.toFixed(2)}</text>`;};
+
+  let svg=`<svg viewBox="0 0 ${W} ${H}" width="100%">`;
+  // gridlines + y price labels (left)
+  for(let k=0;k<=3;k++){const gv=lo+(hi-lo)*k/3, gy=fx(Y(gv));
+    svg+=`<line x1="${ML}" y1="${gy}" x2="${W-MR}" y2="${gy}" stroke="#232c3b" stroke-width="1"/>`+
+      `<text x="2" y="${fx(+gy+3)}" fill="#5b6675" font-size="8" font-family="monospace">$${gv.toFixed(gv<10?2:1)}</text>`;}
+  // area fill under price
+  let area='M'+fx(X(0))+' '+fx(Y(closes[0]))+' ';
+  for(let i=1;i<n;i++)area+='L'+fx(X(i))+' '+fx(Y(closes[i]))+' ';
+  area+='L'+fx(X(n-1))+' '+fx(H-B)+' L'+fx(X(0))+' '+fx(H-B)+' Z';
+  svg+=`<path d="${area}" fill="#22b8a6" opacity="0.08"/>`;
+  // faint TP lines for every open tranche
+  tps.forEach(v=>{if(v>=lo&&v<=hi)svg+=`<line x1="${ML}" y1="${fx(Y(v))}" x2="${W-MR}" y2="${fx(Y(v))}" stroke="#e0a83a" stroke-width="1" stroke-dasharray="2 4" opacity="0.45"/>`;});
+  // reference lines w/ labels
+  svg+=hline(tpMin,'#e0a83a','익절');
+  svg+=hline(maThresh,'#e5534b','하락기준');
+  svg+=hline(nextBuy,'#3fb950','매수');
+  // MA + price
+  svg+=poly(ma,'#8b98a9',1.1);
+  svg+=poly(closes,'#22b8a6',1.9);
+  // current price dot + label
+  const cy=fx(Y(price));
+  svg+=`<circle cx="${fx(X(n-1))}" cy="${cy}" r="2.8" fill="#e6edf3"/>`;
+  svg+=`<text x="${lblX}" y="${fx(+cy+3)}" fill="#e6edf3" font-size="9" font-family="monospace">현재 $${price.toFixed(2)}</text>`;
+  // dates
+  const d0=hist[0].date, d1=hist[n-1].date;
+  svg+=`<text x="${ML}" y="${H-5}" fill="#5b6675" font-size="8" font-family="monospace">${d0}</text>`;
+  svg+=`<text x="${W-MR}" y="${H-5}" fill="#5b6675" font-size="8" font-family="monospace" text-anchor="end">${d1}</text>`;
   svg+='</svg>';
+
+  // info bar (상세)
+  const vsMA=maLast!=null?((price/maLast-1)*100):null;
+  const toBuy=nextBuy!=null?((nextBuy/price-1)*100):null;
+  const toSell=tpMin!=null?((tpMin/price-1)*100):null;
+  const sgn=v=>(v>=0?'+':'')+v.toFixed(1)+'%';
+  let line2;
+  if(open.length){
+    line2=`보유 ${open.length}개 · 평단 $${avg.toFixed(2)}`+
+      (nextBuy!=null?` · <b style="color:#3fb950">매수 ${sgn(toBuy)}</b>`:'')+
+      (tpMin!=null?` · <b style="color:#e0a83a">익절 ${sgn(toSell)}</b>`:'');
+  }else{
+    const above=maLast!=null&&price>=maLast*(1-cfg.trendBand);
+    line2=`포지션 없음 · 20일선 ${above?'<b style="color:#22b8a6">위 → 진입 가능</b>':'<b style="color:#e5534b">아래 → 대기</b>'}`;
+  }
+  const info=`<div class="cinfo"><div>현재 <b>$${price.toFixed(2)}</b> · ${cfg.maWindow}일선 $${maLast!=null?maLast.toFixed(2):'—'}`+
+    (vsMA!=null?` <span style="color:${vsMA>=0?'#22b8a6':'#e5534b'}">(${sgn(vsMA)})</span>`:'')+`</div><div>${line2}</div></div>`;
+
   const leg=`<div class="legend">
     <span><i style="border-color:#22b8a6"></i>가격</span>
     <span><i style="border-color:#8b98a9"></i>${cfg.maWindow}일선</span>
     <span><i style="border-color:#3fb950"></i>매수선</span>
     <span><i style="border-color:#e0a83a"></i>익절선</span>
     <span><i style="border-color:#e5534b"></i>하락기준</span></div>`;
-  return svg+leg;
+  return info+svg+leg;
 }
 
 /* ===== 렌더 ===== */
