@@ -189,11 +189,12 @@
     </div>
     <div class="card">
       <h3>시세 프록시</h3>
-      <label>프록시 베이스 URL</label>
-      <input id="cfgProxy" value="https://sh-proxy.sam840711.workers.dev">
+      <label>커스텀 프록시 (선택)</label>
+      <input id="cfgProxy" placeholder="비워두면 공개 프록시 사용">
       <div class="faint" style="font-size:11px;margin-top:6px">
-        Yahoo(MST3.L)는 브라우저 직접 호출을 막아 프록시가 필요합니다. 실패 시 현재가를
-        수동 입력해도 신호는 정상 작동합니다.</div>
+        기본은 SH Portfolio와 동일한 공개 프록시(corsproxy·allorigins·codetabs)로 MST3.L을
+        조회합니다. sh-proxy 워커를 쓰려면 여기 입력(자동으로 ?url= 붙음). 실패해도 현재가
+        수동 입력하면 신호는 정상 작동합니다.</div>
     </div>
     <div class="card">
       <h3>Google Drive 백업</h3>
@@ -264,7 +265,7 @@ const CLIENT_ID='836300793486-tm7ai7ehdllc2031mjev3e248af8mgt1.apps.googleuserco
 let S=load();
 function blank(){return{cfg:Object.assign({},Engine.DEFAULT_CFG),fx:1380,
   tranches:[],lastBuyPriceUSD:null,realizedKRW:0,sweptKRW:0,
-  priceHistory:[],price:null,proxy:'https://sh-proxy.sam840711.workers.dev',
+  priceHistory:[],price:null,proxy:'',
   lastBackup:null};}
 function load(){try{const r=localStorage.getItem(KEY);if(!r)return blank();
   return Object.assign(blank(),JSON.parse(r));}catch(e){return blank();}}
@@ -394,27 +395,61 @@ $('btnSell').onclick=()=>{
   save();render();toast(`#${t.id}번 익절 ${pnl>=0?'+':''}${won(pnl)}`);
 };
 
+/* SH Portfolio와 동일한 프록시 체인. base + encodeURIComponent(yahooUrl). */
+const PUBLIC_PROXIES=[
+  'https://corsproxy.io/?url=',
+  'https://api.allorigins.win/raw?url=',
+  'https://api.codetabs.com/v1/proxy/?quest=',
+];
+let _lastGoodProxy=null;
+function getProxies(){
+  let list=PUBLIC_PROXIES.slice();
+  const c=(S.proxy||'').trim();
+  if(c){ let u=c; if(!/[?&](url|quest)=$/.test(u)) u+=(u.includes('?')?'&':'?')+'url='; list=[u,...list]; }
+  const lg=_lastGoodProxy;
+  if(lg&&list.includes(lg)) list=[lg,...list.filter(p=>p!==lg)];
+  return list;
+}
+async function fetchWithTimeout(url,ms){
+  const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),ms);
+  try{return await fetch(url,{signal:ctrl.signal});}finally{clearTimeout(t);}
+}
+async function proxyFetchJson(targetUrl){
+  let lastErr;
+  for(const base of getProxies()){
+    try{
+      const res=await fetchWithTimeout(base+encodeURIComponent(targetUrl),3500);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const json=JSON.parse(await res.text());
+      _lastGoodProxy=base;return json;
+    }catch(e){lastErr=e;}
+  }
+  throw lastErr||new Error('proxy failed');
+}
+
 $('btnFetch').onclick=fetchPrice;
 async function fetchPrice(){
-  const base=(S.proxy||'').replace(/\/$/,'');
-  const y='https://query1.finance.yahoo.com/v8/finance/chart/MST3.L?range=3mo&interval=1d';
-  const tries=[base+'/?url='+encodeURIComponent(y), base+'/'+y, y];
   $('dotProxy').className='dot warn';
-  for(const u of tries){
-    try{
-      const r=await fetch(u,{cache:'no-store'});if(!r.ok)continue;
-      const j=await r.json();
-      const res=j.chart&&j.chart.result&&j.chart.result[0];if(!res)continue;
-      const ts=res.timestamp||[];const q=res.indicators.quote[0].close||[];
-      const hist=[];for(let i=0;i<ts.length;i++){if(q[i]!=null)
-        hist.push({date:new Date(ts[i]*1000).toISOString().slice(0,10),close:q[i]});}
-      if(!hist.length)continue;
-      S.priceHistory=hist.slice(-400);S.price=hist[hist.length-1].close;
-      save();render();toast('시세 갱신 · '+hist.length+'일');return;
-    }catch(e){/* try next */}
+  // events=split + adjclose 우선 → MST3 역분할/병합 불연속 제거 (SH Portfolio와 동일)
+  const y='https://query1.finance.yahoo.com/v8/finance/chart/MST3.L?interval=1d&range=3mo&events=split&t='+Date.now();
+  try{
+    const j=await proxyFetchJson(y);
+    const r=j&&j.chart&&j.chart.result&&j.chart.result[0];
+    if(!r||!r.timestamp) throw new Error('no data');
+    const q=(r.indicators&&r.indicators.quote&&r.indicators.quote[0]&&r.indicators.quote[0].close)||[];
+    const adj=(r.indicators&&r.indicators.adjclose&&r.indicators.adjclose[0]&&r.indicators.adjclose[0].adjclose)||null;
+    const hist=[];
+    for(let i=0;i<r.timestamp.length;i++){
+      const v=(adj&&adj[i]!=null)?adj[i]:q[i];
+      if(v!=null) hist.push({date:new Date(r.timestamp[i]*1000).toISOString().slice(0,10),close:v});
+    }
+    if(!hist.length) throw new Error('empty');
+    S.priceHistory=hist.slice(-400);S.price=hist[hist.length-1].close;
+    save();render();$('dotProxy').className='dot ok';toast('시세 갱신 · '+hist.length+'일');
+  }catch(e){
+    $('dotProxy').className='dot err';
+    toast('시세 실패 — 현재가 수동 입력하세요');
   }
-  $('dotProxy').className='dot err';
-  toast('시세 실패 — 현재가 수동 입력하세요');
 }
 
 $('btnSaveCfg').onclick=()=>{
