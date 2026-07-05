@@ -247,8 +247,9 @@ const Engine = (function(){
       else reason='관망';}
     const totalCost=open.reduce((a,l)=>a+l.krwCost,0);
     const totalShares=open.reduce((a,l)=>a+l.shares,0);
+    const totalUsd=open.reduce((a,l)=>a+l.shares*l.buyPrice,0);
     return{action,sells,reason,downtrend,canBuy,maValue:ma,
-      avgUSD:totalShares>0?totalCost/totalShares:null,
+      avgUSD:totalShares>0?totalUsd/totalShares:null,
       openCount:open.length,splits:cfg.splits,
       trancheBudgetKRW:cfg.sleeveCapitalKRW/cfg.splits,capUsedKRW:totalCost};
   }
