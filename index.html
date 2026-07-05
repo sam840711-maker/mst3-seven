@@ -97,6 +97,11 @@
         padding:11px 12px;font-family:var(--mono);font-size:15px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .trlist{font-family:var(--mono);font-size:12px}
+  .holdsum{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin:2px 0 12px;
+    padding-bottom:12px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px}
+  .holdsum .row{display:flex;justify-content:space-between}
+  .holdsum .row .k{color:var(--muted)} .holdsum .row b{color:var(--ink)}
+  .holdsum .full{grid-column:1 / -1}
   .tr{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
   .tr:last-child{border:none}
   .tr .st{padding:1px 6px;border-radius:5px;font-size:10px}
@@ -143,9 +148,9 @@
 <div class="wrap">
   <header>
     <div class="brand">세븐스플릿 <span class="tag" id="brandTag">멀티</span></div>
-    <div style="display:flex;gap:6px;align-items:center">
-      <span class="dot" id="dotProxy" title="시세"></span>
-      <span class="dot" id="dotBackup" title="백업"></span>
+    <div style="display:flex;gap:10px;align-items:center;font-family:var(--mono);font-size:10px;color:var(--faint)">
+      <span style="display:flex;align-items:center;gap:4px"><span class="dot" id="dotProxy" title="시세"></span>시세</span>
+      <span style="display:flex;align-items:center;gap:4px"><span class="dot" id="dotBackup" title="백업"></span>백업</span>
     </div>
   </header>
 
@@ -206,13 +211,14 @@
   <!-- tranche list -->
   <div class="card">
     <h3>트란셰 내역</h3>
+    <div id="holdSum"></div>
     <div class="trlist" id="trlist"></div>
   </div>
 
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.13 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.15 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -514,7 +520,7 @@ function render(){
     lad.appendChild(d);}
 
   const used=opens.reduce((a,t)=>a+t.krwCost,0);
-  $('stUsed').innerHTML=won(used)+' <small>/ '+(cfg.sleeveCapitalKRW/1e4).toLocaleString()+'만</small>';
+  $('stUsed').innerHTML=won(used)+' <small>/ '+won(cfg.sleeveCapitalKRW)+'</small>';
   $('stFree').textContent=won(cfg.sleeveCapitalKRW-used);
   const rv=$('stReal');rv.textContent=(inst.sweptKRW>=0?'+':'')+won(inst.sweptKRW);
   rv.className='v '+(inst.sweptKRW>0?'pos':inst.sweptKRW<0?'neg':'');
@@ -525,6 +531,29 @@ function render(){
   if(fxR!==0||inst.tranches.some(t=>t.status==='closed')) parts.push(`누적 환차 <b style="color:${fxR>=0?'#22b8a6':'#e5534b'}">${fxR>=0?'+':''}${won(fxR)}</b>`);
   $('fxStat').innerHTML=parts.length?parts.join(' · ')
     :`<span class="faint">익절 시 달러로 확정 → 나중에 "환전 기록"에서 원화·환율 입력 시 환차 확정</span>`;
+
+  // 보유 종합 요약 (열린 트란셰 기준)
+  const openT=inst.tranches.filter(t=>t.status==='open');
+  if(openT.length&&inst.price!=null){
+    const shares=openT.reduce((a,t)=>a+t.shares,0);
+    const cost=openT.reduce((a,t)=>a+t.krwCost,0);
+    const mkt=shares*inst.price*S.fx;              // 현재 평가액(원화, 실시간 환율)
+    const pnl=mkt-cost, pctv=cost>0?(pnl/cost*100):0;
+    // 자산 효과(매수환율 기준) vs 환율 효과(미실현 환차) 분해
+    let assetPnl=0, fxPnl=0;
+    openT.forEach(t=>{const bfx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
+      assetPnl+=t.shares*bfx*(inst.price-t.buyPriceUSD);
+      fxPnl+=t.shares*inst.price*(S.fx-bfx);});
+    const col=pnl>=0?'#22b8a6':'#e5534b';
+    const sw=v=>(v>=0?'+':'')+won(v);
+    $('holdSum').innerHTML=
+      `<div class="row"><span class="k">총 수량</span><b>${shares.toFixed(1)}주</b></div>`+
+      `<div class="row"><span class="k">평단</span><b>$${(openT.reduce((a,t)=>a+t.shares*t.buyPriceUSD,0)/shares).toFixed(2)}</b></div>`+
+      `<div class="row"><span class="k">매입원가</span><b>${won(cost)}</b></div>`+
+      `<div class="row"><span class="k">평가액</span><b>${won(mkt)}</b></div>`+
+      `<div class="row full"><span class="k">평가손익 <span class="faint">(현재가·환율 기준)</span></span><b style="color:${col}">${pnl>=0?'+':''}${won(pnl)} (${pnl>=0?'+':''}${pctv.toFixed(1)}%)</b></div>`+
+      `<div class="row full" style="font-size:11px"><span class="faint">└ 자산 <b style="color:${assetPnl>=0?'#22b8a6':'#e5534b'}">${sw(assetPnl)}</b> · 환율(미실현 환차) <b style="color:${fxPnl>=0?'#22b8a6':'#e5534b'}">${sw(fxPnl)}</b></span></div>`;
+  } else $('holdSum').innerHTML='';
 
   const tl=$('trlist');
   if(!inst.tranches.length)tl.innerHTML='<span class="muted">아직 매수한 트란셰가 없습니다.</span>';
