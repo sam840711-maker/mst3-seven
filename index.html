@@ -121,6 +121,17 @@
     border-radius:999px;padding:7px 16px;font-size:12px;font-family:var(--mono);
     opacity:0;transition:opacity .12s;pointer-events:none;white-space:nowrap}
   .ptr.spin{color:var(--buy)}
+  .modal{position:fixed;inset:0;z-index:75;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:20px}
+  .modal.show{display:flex}
+  .modal-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;width:100%;max-width:400px}
+  .modal-card h3{margin:0 0 12px;font-size:16px;color:var(--ink)}
+  .modal-card .fld{margin-bottom:10px}
+  .modal-card .fld label{margin:0 0 4px}
+  #emCalc{font-family:var(--mono);font-size:12px;color:var(--muted);margin:8px 0 4px;line-height:1.55}
+  .fxstat{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;margin:-4px 0 8px}
+  .fxstat b{color:var(--ink)}
+  .linkbtn{display:inline;width:auto;flex:none;background:transparent;border:none;
+    color:var(--buy);font-size:12px;font-family:var(--mono);padding:0 0 0 4px;text-decoration:underline}
 </style>
 </head>
 <body>
@@ -160,6 +171,8 @@
     <div class="stat"><div class="k">열린 트란셰</div><div class="v" id="stOpen">–</div></div>
   </div>
 
+  <div class="fxstat" id="fxStat"></div>
+
   <div class="row">
     <button class="primary" id="btnBuy">매수 기록</button>
     <button class="gold" id="btnSell">익절 기록</button>
@@ -188,7 +201,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.7 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.9 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -241,6 +254,14 @@
     </div>
   </div>
 </div>
+<div class="modal" id="entryModal">
+  <div class="modal-card">
+    <h3 id="emTitle">매수 기록</h3>
+    <div id="emFields"></div>
+    <div id="emCalc"></div>
+    <div class="row"><button class="ghost" id="emCancel">취소</button><button class="primary" id="emOk">확인</button></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -282,7 +303,8 @@ const Engine=(function(){
 const KEY='mst3seven_v1';
 const CLIENT_ID='836300793486-tm7ai7ehdllc2031mjev3e248af8mgt1.apps.googleusercontent.com';
 function defInst(id,symbol,name){return{id,symbol,name,cfg:Object.assign({},Engine.DEFAULT_CFG),
-  tranches:[],priceHistory:[],lastBuyPriceUSD:null,price:null,realizedKRW:0,sweptKRW:0};}
+  tranches:[],priceHistory:[],lastBuyPriceUSD:null,price:null,realizedKRW:0,sweptKRW:0,
+  usdPool:0,usdPoolKrwCost:0,fxRealizedKRW:0};}
 function blank(){return{version:4,fx:1380,proxy:'',activeId:'mst3',
   instruments:[defInst('mst3','MST3.L','MST3 (3x MSTR)')],lastBackup:null};}
 function migrate(o){
@@ -298,7 +320,17 @@ function migrate(o){
   }
   return blank();
 }
-function load(){try{const r=localStorage.getItem(KEY);if(!r)return blank();return migrate(JSON.parse(r));}catch(e){return blank();}}
+function normalize(s){
+  if(s&&s.instruments)s.instruments.forEach(i=>{
+    if(i.usdPool==null)i.usdPool=0;
+    if(i.usdPoolKrwCost==null)i.usdPoolKrwCost=0;
+    if(i.fxRealizedKRW==null)i.fxRealizedKRW=0;
+    if(!Array.isArray(i.tranches))i.tranches=[];
+    if(!Array.isArray(i.priceHistory))i.priceHistory=[];
+  });
+  return s;
+}
+function load(){try{const r=localStorage.getItem(KEY);if(!r)return blank();return normalize(migrate(JSON.parse(r)));}catch(e){return blank();}}
 function save(){localStorage.setItem(KEY,JSON.stringify(S));}
 let S=load();
 function A(){return S.instruments.find(i=>i.id===S.activeId)||S.instruments[0];}
@@ -457,12 +489,19 @@ function render(){
   const rv=$('stReal');rv.textContent=(inst.sweptKRW>=0?'+':'')+won(inst.sweptKRW);
   rv.className='v '+(inst.sweptKRW>0?'pos':inst.sweptKRW<0?'neg':'');
   $('stOpen').innerHTML=opens.length+' <small>/ '+cfg.splits+'</small>';
+  const pool=inst.usdPool||0, fxR=inst.fxRealizedKRW||0;
+  const parts=[];
+  if(pool>0.005) parts.push(`미환전 <b>$${pool.toFixed(2)}</b> <button class="linkbtn" data-conv="1">환전 기록</button>`);
+  if(fxR!==0||inst.tranches.some(t=>t.status==='closed')) parts.push(`누적 환차 <b style="color:${fxR>=0?'#22b8a6':'#e5534b'}">${fxR>=0?'+':''}${won(fxR)}</b>`);
+  $('fxStat').innerHTML=parts.length?parts.join(' · ')
+    :`<span class="faint">익절 시 달러로 확정 → 나중에 "환전 기록"에서 원화·환율 입력 시 환차 확정</span>`;
 
   const tl=$('trlist');
   if(!inst.tranches.length)tl.innerHTML='<span class="muted">아직 매수한 트란셰가 없습니다.</span>';
   else tl.innerHTML=inst.tranches.slice().reverse().map(t=>{
     const st=t.status==='open'?'open':'closed';
-    const right=t.status==='open'?`$${t.buyPriceUSD.toFixed(2)} · ${t.shares.toFixed(1)}주`:`${t.realizedKRW>=0?'+':''}${won(t.realizedKRW)}`;
+    const cp=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
+    const right=t.status==='open'?`$${t.buyPriceUSD.toFixed(2)} · ${t.shares.toFixed(1)}주`:`${cp>=0?'+':''}${won(cp)}${t.usdProceeds?` · $${t.usdProceeds.toFixed(0)}`:''}`;
     return `<div class="tr"><span>#${t.id} <span class="st ${st}">${st==='open'?'보유':'익절'}</span> <span class="faint">${t.buyDate||''}</span></span><span>${right} <button class="delx" data-del="${t.id}">×</button></span></div>`;
   }).join('');
 
@@ -509,6 +548,22 @@ $('btnApply').onclick=()=>{
   if(h.length>400)inst.priceHistory=h.slice(-400);
   save();render();toast('현재가 적용');
 };
+/* ===== 입력 모달 (실제 체결 · 원화 입력) ===== */
+const today=()=>new Date().toISOString().slice(0,10);
+const pct=v=>(v>=0?'+':'')+v.toFixed(1)+'%';
+let emState=null;
+function buildFields(defs){
+  $('emFields').innerHTML=defs.map(f=>`<div class="fld"><label>${f.label}</label><input id="${f.id}" inputmode="decimal" value="${f.val}"></div>`).join('');
+  defs.forEach(f=>$(f.id).addEventListener('input',()=>{if(emState)emState.recalc();}));
+}
+function openModal(title,defs,recalc,onOk){
+  $('emTitle').textContent=title;buildFields(defs);emState={recalc,onOk};recalc();
+  $('entryModal').classList.add('show');
+}
+function closeModal(){$('entryModal').classList.remove('show');emState=null;}
+$('emCancel').onclick=closeModal;
+$('emOk').onclick=()=>{if(emState&&emState.onOk){if(emState.onOk()===false)return;}closeModal();};
+
 $('btnBuy').onclick=()=>{
   const inst=A(),cfg=inst.cfg;
   if(inst.price==null){toast('먼저 현재가를 적용하세요');return;}
@@ -516,15 +571,27 @@ $('btnBuy').onclick=()=>{
   if(opens>=cfg.splits){toast('분할 한도 도달 — 추가 매수 없음');return;}
   const budget=cfg.sleeveCapitalKRW/cfg.splits;
   const shares=Engine.sharesForTranche(cfg,inst.price,S.fx);
-  const ma=Engine.sma(inst.priceHistory.map(h=>h.close).concat([inst.price]),cfg.maWindow);
-  const downtrend=ma!=null&&inst.price<ma*(1-cfg.trendBand);
-  let msg=`${opens+1}번 트란셰 매수 기록\n\n$${inst.price.toFixed(2)} · ${shares.toFixed(1)}주 · ${won(budget)}`;
-  if(downtrend)msg+='\n\n⚠ 지금은 하락 국면이라 전략상 매수 신호가 아닙니다. 그래도 기록할까요?';
-  if(!confirm(msg))return;
-  const id=(inst.tranches.reduce((m,t)=>Math.max(m,t.id),0)||0)+1;
-  inst.tranches.push({id,buyDate:new Date().toISOString().slice(0,10),buyPriceUSD:inst.price,shares,krwCost:budget,status:'open'});
-  inst.lastBuyPriceUSD=inst.price;save();render();toast(`#${id}번 매수 기록`);
+  openModal(`매수 기록 · ${opens+1}번 트란셰`,[
+    {id:'emPrice',label:'체결가 (USD)',val:Number(inst.price.toFixed(4))},
+    {id:'emShares',label:'수량 (주)',val:Number(shares.toFixed(2))},
+    {id:'emKrw',label:'원화 매입금액 (₩) — 실제 결제액',val:Math.round(budget)},
+  ],()=>{
+    const p=+$('emPrice').value,sh=+$('emShares').value,kr=+$('emKrw').value;
+    const fx=(sh>0&&p>0)?kr/(sh*p):0;
+    const ma=Engine.sma(inst.priceHistory.map(h=>h.close).concat([inst.price]),cfg.maWindow);
+    const down=ma!=null&&inst.price<ma*(1-cfg.trendBand);
+    $('emCalc').innerHTML=`적용 환율 ₩${fx.toFixed(1)} · 1주당 ₩${sh>0?Math.round(kr/sh).toLocaleString():'—'}`+
+      (down?`<br><span style="color:#e5534b">⚠ 하락 국면 — 전략상 매수 신호 아님</span>`:'');
+  },()=>{
+    const p=+$('emPrice').value,sh=+$('emShares').value,kr=+$('emKrw').value;
+    if(!(p>0&&sh>0&&kr>0)){toast('값을 확인하세요');return false;}
+    const buyFx=kr/(sh*p);
+    const id=(inst.tranches.reduce((m,t)=>Math.max(m,t.id),0)||0)+1;
+    inst.tranches.push({id,buyDate:today(),buyPriceUSD:p,shares:sh,krwCost:kr,buyFx,status:'open'});
+    inst.lastBuyPriceUSD=p;save();render();toast(`#${id}번 매수 기록 (₩${Math.round(kr).toLocaleString()})`);
+  });
 };
+
 $('btnSell').onclick=()=>{
   const inst=A(),cfg=inst.cfg;
   if(inst.price==null){toast('먼저 현재가를 적용하세요');return;}
@@ -532,20 +599,66 @@ $('btnSell').onclick=()=>{
   const targets=winners.length?winners:inst.tranches.filter(t=>t.status==='open');
   if(!targets.length){toast('익절할 트란셰 없음');return;}
   const t=targets.sort((a,b)=>b.buyPriceUSD-a.buyPriceUSD)[0];
-  const proceeds=t.shares*inst.price*S.fx*(1-0.0015),pnl=proceeds-t.krwCost;
-  const note=winners.length?'':'\n\n⚠ 익절 목표(+'+(cfg.tp*100).toFixed(0)+'%) 미달 트란셰입니다.';
-  if(!confirm(`#${t.id}번 익절\n\n$${inst.price.toFixed(2)} 매도 · 손익 ${pnl>=0?'+':''}${won(pnl)}${note}`))return;
-  t.status='closed';t.sellDate=new Date().toISOString().slice(0,10);t.sellPriceUSD=inst.price;t.realizedKRW=pnl;
-  inst.realizedKRW+=pnl;if(cfg.sweep)inst.sweptKRW+=pnl;
-  const so=inst.tranches.filter(x=>x.status==='open');
-  inst.lastBuyPriceUSD=so.length?so[so.length-1].buyPriceUSD:null;
-  save();render();toast(`#${t.id}번 익절 ${pnl>=0?'+':''}${won(pnl)}`);
+  const buyFx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
+  const usdProc=t.shares*inst.price*(1-0.0015);
+  openModal(`익절 기록 · #${t.id}번 (매수 $${t.buyPriceUSD.toFixed(2)})`,[
+    {id:'emSell',label:'매도가 (USD)',val:Number(inst.price.toFixed(4))},
+    {id:'emUsd',label:'수령 달러 ($) — 실제 매도대금',val:Number(usdProc.toFixed(2))},
+  ],()=>{
+    const sp=+$('emSell').value,ud=+$('emUsd').value;
+    const assetRet=(sp/t.buyPriceUSD-1);
+    const assetPnlKRW=ud*buyFx-t.krwCost;                  // 자산손익(매수환율 기준)
+    const provKRW=ud*S.fx-t.krwCost;                        // 현재 환율로 환산한 잠정 원화손익
+    $('emCalc').innerHTML=`자산 ${pct(assetRet*100)} · 매도대금 $${ud.toFixed(2)}`+
+      `<br>자산손익(매수환율) <b style="color:${assetPnlKRW>=0?'#22b8a6':'#e5534b'}">${assetPnlKRW>=0?'+':''}₩${Math.round(assetPnlKRW).toLocaleString()}</b>`+
+      `<br><span class="faint">달러는 미환전 잔고로 적립 · 원화손익은 환전 시 확정 (잠정 ₩${Math.round(provKRW).toLocaleString()} @${S.fx})</span>`;
+  },()=>{
+    const sp=+$('emSell').value,ud=+$('emUsd').value;
+    if(!(sp>0&&ud>0)){toast('값을 확인하세요');return false;}
+    const assetPnlKRW=ud*buyFx-t.krwCost;
+    t.status='closed';t.sellDate=today();t.sellPriceUSD=sp;t.usdProceeds=ud;t.assetPnlKRW=assetPnlKRW;t.buyFx=buyFx;t.poolKrwAdded=ud*buyFx;
+    inst.realizedKRW+=assetPnlKRW;if(cfg.sweep)inst.sweptKRW+=assetPnlKRW;
+    inst.usdPool=(inst.usdPool||0)+ud;inst.usdPoolKrwCost=(inst.usdPoolKrwCost||0)+ud*buyFx;
+    const so=inst.tranches.filter(x=>x.status==='open');inst.lastBuyPriceUSD=so.length?so[so.length-1].buyPriceUSD:null;
+    save();render();toast(`#${t.id}번 익절 · 미환전 +$${ud.toFixed(2)}`);
+  });
 };
+
+/* 환전 기록 — 미환전 USD를 원화로. 환차손익은 여기서 확정 (환전환율 vs 매수 blended 환율) */
+function openConvertModal(){
+  const inst=A();const pool=inst.usdPool||0;
+  if(pool<=0){toast('미환전 달러가 없습니다');return;}
+  const costFx=pool>0?(inst.usdPoolKrwCost||0)/pool:S.fx;
+  openModal('환전 기록',[
+    {id:'emConvUsd',label:'환전 달러 ($)',val:Number(pool.toFixed(2))},
+    {id:'emConvFx',label:'적용 환율 (₩/$)',val:S.fx},
+  ],()=>{
+    const ud=+$('emConvUsd').value,fx=+$('emConvFx').value;
+    const krw=ud*fx, fxPnl=ud*(fx-costFx);
+    $('emCalc').innerHTML=`원화 수령 <b>₩${Math.round(krw).toLocaleString()}</b> · 매수 blended 환율 ₩${costFx.toFixed(1)}`+
+      `<br>환차손익 <b style="color:${fxPnl>=0?'#22b8a6':'#e5534b'}">${fxPnl>=0?'+':''}₩${Math.round(fxPnl).toLocaleString()}</b>`;
+  },()=>{
+    let ud=+$('emConvUsd').value;const fx=+$('emConvFx').value;
+    if(!(ud>0&&fx>0)){toast('값을 확인하세요');return false;}
+    ud=Math.min(ud,pool);
+    const fxPnl=ud*(fx-costFx);
+    inst.usdPool=pool-ud;inst.usdPoolKrwCost=Math.max(0,(inst.usdPoolKrwCost||0)-ud*costFx);
+    inst.fxRealizedKRW=(inst.fxRealizedKRW||0)+fxPnl;
+    save();render();toast(`환전 $${ud.toFixed(2)} · 환차 ${fxPnl>=0?'+':''}${won(fxPnl)}`);
+  });
+}
+$('fxStat').addEventListener('click',(e)=>{if(e.target.closest('[data-conv]'))openConvertModal();});
+
 $('trlist').addEventListener('click',(e)=>{
   const btn=e.target.closest('[data-del]');if(!btn)return;const inst=A();
   const id=parseInt(btn.dataset.del);const t=inst.tranches.find(x=>x.id===id);if(!t)return;
-  if(!confirm(`#${id}번 트란셰 기록을 삭제할까요?`+(t.status==='closed'?'\n(실현익 스윕도 되돌립니다)':'')))return;
-  if(t.status==='closed'){inst.realizedKRW-=t.realizedKRW||0;if(inst.cfg.sweep)inst.sweptKRW-=t.realizedKRW||0;}
+  if(!confirm(`#${id}번 트란셰 기록을 삭제할까요?`+(t.status==='closed'?'\n(자산 실현익·미환전 잔고에서도 되돌립니다. 이미 환전한 환차는 유지)':'')))return;
+  if(t.status==='closed'){
+    const ap=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
+    inst.realizedKRW-=ap;if(inst.cfg.sweep)inst.sweptKRW-=ap;
+    inst.usdPool=Math.max(0,(inst.usdPool||0)-(t.usdProceeds||0));
+    inst.usdPoolKrwCost=Math.max(0,(inst.usdPoolKrwCost||0)-(t.poolKrwAdded||(t.usdProceeds||0)*(t.buyFx||0)));
+  }
   inst.tranches=inst.tranches.filter(x=>x.id!==id);
   const open=inst.tranches.filter(x=>x.status==='open');
   inst.lastBuyPriceUSD=open.length?open[open.length-1].buyPriceUSD:null;
@@ -648,7 +761,7 @@ async function driveBackup(){const meta={name:'seven_backup.json',parents:['appD
 async function driveRestore(){try{const q=await fetch("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='seven_backup.json'",{headers:{Authorization:'Bearer '+accessToken}});const jd=await q.json();
   if(!jd.files||!jd.files[0]){toast('백업 파일 없음');return;}
   const f=await fetch('https://www.googleapis.com/drive/v3/files/'+jd.files[0].id+'?alt=media',{headers:{Authorization:'Bearer '+accessToken}});
-  S=migrate(await f.json());save();render();toast('복원 완료');}catch(e){toast('복원 실패');}}
+  S=normalize(migrate(await f.json()));save();render();toast('복원 완료');}catch(e){toast('복원 실패');}}
 $('btnBackup').onclick=()=>withToken(driveBackup,true);
 $('btnRestore').onclick=()=>withToken(driveRestore,true);
 
