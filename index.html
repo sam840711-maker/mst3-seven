@@ -48,6 +48,8 @@
   .act.SELL{color:var(--sell)} .chip.SELL{background:var(--sell-dim);color:var(--sell)}
   .act.HOLD{color:var(--muted)} .chip.HOLD{background:#20262f;color:var(--muted)}
   .hero .why{color:var(--muted);font-size:14px;margin-top:4px}
+  .hero .why2{font-family:var(--mono);font-size:11.5px;margin-top:6px;line-height:1.55;color:var(--muted)}
+  .hero .why2 b{color:var(--ink)}
   .hero .px{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:14px;font-family:var(--mono);font-size:13px}
   .hero .px span{white-space:nowrap;display:inline-flex;gap:5px;align-items:baseline}
   .hero .px b{color:var(--ink);font-weight:600}
@@ -168,6 +170,7 @@
     <div class="eyebrow">오늘의 신호 · <span id="heroSym">—</span></div>
     <div class="act HOLD" id="heroAct">관망 <span class="chip HOLD">HOLD</span></div>
     <div class="why" id="heroWhy">시세를 불러오거나 현재가를 입력하세요.</div>
+    <div class="why2" id="heroWhy2"></div>
     <div class="px" id="heroPx"></div>
   </div>
 
@@ -224,7 +227,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.17 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.18 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -501,6 +504,21 @@ function render(){
     ha.className='act '+sig.action;
     ha.innerHTML=label+' <span class="chip '+sig.action+'">'+sig.action+'</span>';
     $('heroWhy').textContent=sig.reason;
+    // 조건 분해 (관망일 때 왜 대기인지)
+    let hw2='';
+    if(sig.action==='HOLD'){
+      const trendTxt=sig.downtrend?`<b style="color:#e5534b">✗ 하락 국면</b> (20일선 아래)`:`<b style="color:#22b8a6">✓ 추세 양호</b>`;
+      let priceTxt='';
+      if(inst.lastBuyPriceUSD!=null){
+        const nb=inst.lastBuyPriceUSD*(1-cfg.dropStep);
+        priceTxt=p<=nb?` · 가격 <b style="color:#22b8a6">✓ 도달</b>`:` · 가격 <b>다음 매수 $${nb.toFixed(2)}</b> (현재 $${p.toFixed(2)})`;
+      }
+      hw2=`추세 ${trendTxt}${priceTxt}`;
+      if(sig.openCount>=sig.splits) hw2=`분할 ${sig.splits}개 모두 사용 · 익절 대기`;
+      else if(sig.downtrend) hw2+=`<br><span class="faint">→ 20일선 회복 전엔 하락해도 매수 안 함 (규칙상 대기)</span>`;
+      else if(inst.lastBuyPriceUSD!=null&&p>inst.lastBuyPriceUSD*(1-cfg.dropStep)) hw2+=`<br><span class="faint">→ 다음 매수가까지 하락하면 진입</span>`;
+    }
+    $('heroWhy2').innerHTML=hw2;
     const ma=sig.maValue!=null?('$'+sig.maValue.toFixed(2)):'—';
     const dcls=sig.downtrend?'down':'up';
     $('heroPx').innerHTML=`<span>현재가 <b>$${p.toFixed(2)}</b></span>`+
@@ -509,7 +527,7 @@ function render(){
       (sig.avgUSD?`<span>평단 <b>$${sig.avgUSD.toFixed(2)}</b></span>`:'');
   }else{
     ha.className='act HOLD';ha.innerHTML='관망 <span class="chip HOLD">HOLD</span>';
-    $('heroWhy').textContent='시세를 불러오거나 현재가를 입력하세요.';$('heroPx').innerHTML='';
+    $('heroWhy').textContent='시세를 불러오거나 현재가를 입력하세요.';$('heroPx').innerHTML='';$('heroWhy2').innerHTML='';
   }
 
   $('chartCard').innerHTML=buildChart(inst);
