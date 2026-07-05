@@ -102,6 +102,12 @@
   .holdsum .row{display:flex;justify-content:space-between}
   .holdsum .row .k{color:var(--muted)} .holdsum .row b{color:var(--ink)}
   .holdsum .full{grid-column:1 / -1}
+  .trx{padding:9px 0;border-bottom:1px solid var(--line)}
+  .trx:last-child{border:none}
+  .trx-top{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:12px}
+  .trx-detail{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.5}
+  .trx[data-edit]{cursor:pointer}
+  .trx[data-edit]:active{background:var(--panel2);border-radius:8px}
   .tr{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
   .tr:last-child{border:none}
   .tr .st{padding:1px 6px;border-radius:5px;font-size:10px}
@@ -218,7 +224,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.15 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.16 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -547,7 +553,7 @@ function render(){
     const col=pnl>=0?'#22b8a6':'#e5534b';
     const sw=v=>(v>=0?'+':'')+won(v);
     $('holdSum').innerHTML=
-      `<div class="row"><span class="k">총 수량</span><b>${shares.toFixed(1)}주</b></div>`+
+      `<div class="row"><span class="k">총 수량</span><b>${Math.round(shares)}주</b></div>`+
       `<div class="row"><span class="k">평단</span><b>$${(openT.reduce((a,t)=>a+t.shares*t.buyPriceUSD,0)/shares).toFixed(2)}</b></div>`+
       `<div class="row"><span class="k">매입원가</span><b>${won(cost)}</b></div>`+
       `<div class="row"><span class="k">평가액</span><b>${won(mkt)}</b></div>`+
@@ -559,9 +565,19 @@ function render(){
   if(!inst.tranches.length)tl.innerHTML='<span class="muted">아직 매수한 트란셰가 없습니다.</span>';
   else tl.innerHTML=inst.tranches.slice().reverse().map(t=>{
     const st=t.status==='open'?'open':'closed';
-    const cp=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
-    const right=t.status==='open'?`$${t.buyPriceUSD.toFixed(2)} · ${t.shares.toFixed(1)}주`:`${cp>=0?'+':''}${won(cp)}${t.usdProceeds?` · $${t.usdProceeds.toFixed(0)}`:''}`;
-    return `<div class="tr"><span>#${t.id} <span class="st ${st}">${st==='open'?'보유':'익절'}</span> <span class="faint">${t.buyDate||''}</span></span><span>${right} <button class="delx" data-del="${t.id}">×</button></span></div>`;
+    const bfx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
+    const usd=t.shares*t.buyPriceUSD;
+    let detail;
+    if(t.status==='open'){
+      detail=`체결 $${t.buyPriceUSD.toFixed(2)} · ${Math.round(t.shares)}주 · 총 $${usd.toFixed(0)} · 매입 ${won(t.krwCost)} · 환율 ₩${bfx.toFixed(0)}`;
+    }else{
+      const cp=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
+      detail=`매도 $${(t.sellPriceUSD||0).toFixed(2)} · 자산손익 ${cp>=0?'+':''}${won(cp)}${t.usdProceeds?` · 수령 $${t.usdProceeds.toFixed(0)}`:''}`;
+    }
+    return `<div class="trx"${t.status==='open'?` data-edit="${t.id}"`:''}>`+
+      `<div class="trx-top"><span>#${t.id} <span class="st ${st}">${st==='open'?'보유':'익절'}</span> <span class="faint">${t.buyDate||''}</span>${t.status==='open'?' <span class="faint">✎</span>':''}</span>`+
+      `<button class="delx" data-del="${t.id}">×</button></div>`+
+      `<div class="trx-detail">${detail}</div></div>`;
   }).join('');
 
   $('priceTitle').textContent=(inst.symbol||'')+' 현재가';
@@ -632,7 +648,7 @@ $('btnBuy').onclick=()=>{
   const shares=Engine.sharesForTranche(cfg,inst.price,S.fx);
   openModal(`매수 기록 · ${opens+1}번 트란셰`,[
     {id:'emPrice',label:'체결가 (USD)',val:Number(inst.price.toFixed(4))},
-    {id:'emShares',label:'수량 (주)',val:Number(shares.toFixed(2))},
+    {id:'emShares',label:'수량 (주)',val:Math.round(shares)},
     {id:'emKrw',label:'원화 매입금액 (₩) — 실제 결제액',val:Math.round(budget)},
   ],()=>{
     const p=+$('emPrice').value,sh=+$('emShares').value,kr=+$('emKrw').value;
@@ -710,20 +726,45 @@ $('fxStat').addEventListener('click',(e)=>{if(e.target.closest('[data-conv]'))op
 $('ranges').addEventListener('click',(e)=>{const b=e.target.closest('[data-range]');if(!b)return;S.chartRange=b.dataset.range;save();render();});
 
 $('trlist').addEventListener('click',(e)=>{
-  const btn=e.target.closest('[data-del]');if(!btn)return;const inst=A();
-  const id=parseInt(btn.dataset.del);const t=inst.tranches.find(x=>x.id===id);if(!t)return;
-  if(!confirm(`#${id}번 트란셰 기록을 삭제할까요?`+(t.status==='closed'?'\n(자산 실현익·미환전 잔고에서도 되돌립니다. 이미 환전한 환차는 유지)':'')))return;
-  if(t.status==='closed'){
-    const ap=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
-    inst.realizedKRW-=ap;if(inst.cfg.sweep)inst.sweptKRW-=ap;
-    inst.usdPool=Math.max(0,(inst.usdPool||0)-(t.usdProceeds||0));
-    inst.usdPoolKrwCost=Math.max(0,(inst.usdPoolKrwCost||0)-(t.poolKrwAdded||(t.usdProceeds||0)*(t.buyFx||0)));
+  const inst=A();
+  const del=e.target.closest('[data-del]');
+  if(del){
+    const id=parseInt(del.dataset.del);const t=inst.tranches.find(x=>x.id===id);if(!t)return;
+    if(!confirm(`#${id}번 트란셰 기록을 삭제할까요?`+(t.status==='closed'?'\n(자산 실현익·미환전 잔고에서도 되돌립니다. 이미 환전한 환차는 유지)':'')))return;
+    if(t.status==='closed'){
+      const ap=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
+      inst.realizedKRW-=ap;if(inst.cfg.sweep)inst.sweptKRW-=ap;
+      inst.usdPool=Math.max(0,(inst.usdPool||0)-(t.usdProceeds||0));
+      inst.usdPoolKrwCost=Math.max(0,(inst.usdPoolKrwCost||0)-(t.poolKrwAdded||(t.usdProceeds||0)*(t.buyFx||0)));
+    }
+    inst.tranches=inst.tranches.filter(x=>x.id!==id);
+    const open=inst.tranches.filter(x=>x.status==='open');
+    inst.lastBuyPriceUSD=open.length?open[open.length-1].buyPriceUSD:null;
+    save();render();toast(`#${id}번 삭제`);return;
   }
-  inst.tranches=inst.tranches.filter(x=>x.id!==id);
-  const open=inst.tranches.filter(x=>x.status==='open');
-  inst.lastBuyPriceUSD=open.length?open[open.length-1].buyPriceUSD:null;
-  save();render();toast(`#${id}번 삭제`);
+  const ed=e.target.closest('[data-edit]');
+  if(ed)openEditModal(inst,parseInt(ed.dataset.edit));
 });
+
+/* 트란셰 수정 (열린 트란셰) */
+function openEditModal(inst,id){
+  const t=inst.tranches.find(x=>x.id===id);if(!t||t.status!=='open')return;
+  openModal(`#${id}번 트란셰 수정`,[
+    {id:'edPrice',label:'체결가 (USD)',val:Number(t.buyPriceUSD.toFixed(4))},
+    {id:'edShares',label:'수량 (주)',val:Math.round(t.shares)},
+    {id:'edKrw',label:'원화 매입금액 (₩)',val:Math.round(t.krwCost)},
+  ],()=>{
+    const p=+$('edPrice').value,sh=+$('edShares').value,kr=+$('edKrw').value;
+    const fx=(sh>0&&p>0)?kr/(sh*p):0;
+    $('emCalc').innerHTML=`적용 환율 ₩${fx.toFixed(1)} · 1주당 ₩${sh>0?Math.round(kr/sh).toLocaleString():'—'} · 총 $${(sh*p).toFixed(0)}`;
+  },()=>{
+    const p=+$('edPrice').value,sh=+$('edShares').value,kr=+$('edKrw').value;
+    if(!(p>0&&sh>0&&kr>0)){toast('값을 확인하세요');return false;}
+    t.buyPriceUSD=p;t.shares=sh;t.krwCost=kr;t.buyFx=kr/(sh*p);
+    const so=inst.tranches.filter(x=>x.status==='open');inst.lastBuyPriceUSD=so.length?so[so.length-1].buyPriceUSD:null;
+    save();render();toast(`#${id}번 수정됨`);
+  });
+}
 
 /* ===== 프록시 + 시세 + 환율 ===== */
 const PUBLIC_PROXIES=['https://corsproxy.io/?url=','https://api.allorigins.win/raw?url=','https://api.codetabs.com/v1/proxy/?quest='];
