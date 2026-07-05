@@ -1,0 +1,14 @@
+{
+  "name": "MST3 세븐스플릿",
+  "short_name": "MST3 S7",
+  "description": "MST3 세븐스플릿 독립 슬리브 운용 (공격형)",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0e1116",
+  "theme_color": "#0e1116",
+  "orientation": "portrait",
+  "icons": [
+    {"src":"icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}
