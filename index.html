@@ -45,7 +45,9 @@
   .act.SELL{color:var(--sell)} .chip.SELL{background:var(--sell-dim);color:var(--sell)}
   .act.HOLD{color:var(--muted)} .chip.HOLD{background:#20262f;color:var(--muted)}
   .hero .why{color:var(--muted);font-size:14px;margin-top:4px}
-  .hero .px{display:flex;gap:18px;margin-top:14px;font-family:var(--mono);font-size:13px}
+  .hero .px{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:14px;
+        font-family:var(--mono);font-size:13px}
+  .hero .px span{white-space:nowrap;display:inline-flex;gap:5px;align-items:baseline}
   .hero .px b{color:var(--ink);font-weight:600}
   .hero .px .down{color:var(--danger)} .hero .px .up{color:var(--buy)}
 
@@ -93,6 +95,9 @@
   .tr .st{padding:1px 6px;border-radius:5px;font-size:10px}
   .st.open{background:var(--buy-dim);color:var(--buy)}
   .st.closed{background:var(--sell-dim);color:var(--sell)}
+  .delx{flex:none;background:transparent;border:none;color:var(--faint);
+        font-size:17px;line-height:1;padding:0 2px 0 8px;cursor:pointer;width:auto}
+  .delx:active{color:var(--danger)}
   .muted{color:var(--muted)} .faint{color:var(--faint)}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
      background:#0b0e12;border:1px solid var(--line);color:var(--ink);
@@ -197,6 +202,17 @@
         수동 입력하면 신호는 정상 작동합니다.</div>
     </div>
     <div class="card">
+      <h3>ETP 역분할 적용</h3>
+      <div class="faint" style="font-size:11px;margin-bottom:8px">
+        Leverage Shares가 MST3를 역분할(예: 10주→1주)하면, 열린 트란셰의 매수가·수량을
+        새 주가 기준으로 맞춰야 손익·신호가 정확합니다. 비율 입력 후 적용하세요
+        (10 = 10주가 1주로). 시세는 adjclose로 자동 보정되니, 적용 후 "시세 불러오기" 한 번.</div>
+      <div class="grid2" style="align-items:end">
+        <div><label>역분할 비율 (N→1)</label><input id="inRs" inputmode="decimal" placeholder="예: 10"></div>
+        <button id="btnRs">역분할 적용</button>
+      </div>
+    </div>
+    <div class="card">
       <h3>Google Drive 백업</h3>
       <div class="row">
         <button class="ghost" id="btnBackup">지금 백업</button>
@@ -214,7 +230,7 @@
   </details>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:20px">
-    v0.1 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.2 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -290,17 +306,17 @@ function render(){
   if(p!=null){sig=Engine.signal(state,{price:p,closes:closes.concat([p])},cfg);}
 
   // hero
-  const ha=$('heroAct'), hc=$('heroChip');
+  const ha=$('heroAct');
   if(sig){
     const label={BUY:'매수',SELL:'익절',HOLD:'관망'}[sig.action];
-    ha.className='act '+sig.action; hc.className='chip '+sig.action;
-    ha.innerHTML=label+' <span class="chip '+sig.action+'" id="heroChip">'+sig.action+'</span>';
+    ha.className='act '+sig.action;
+    ha.innerHTML=label+' <span class="chip '+sig.action+'">'+sig.action+'</span>';
     $('heroWhy').textContent=sig.reason;
     const ma=sig.maValue!=null?('$'+sig.maValue.toFixed(2)):'—';
     const dcls=sig.downtrend?'down':'up';
-    $('heroPx').innerHTML=`현재가 <b>$${p.toFixed(2)}</b>`+
+    $('heroPx').innerHTML=`<span>현재가 <b>$${p.toFixed(2)}</b></span>`+
       `<span>20일선 <b>${ma}</b></span>`+
-      `<span class="${dcls}">${sig.downtrend?'하락국면':'추세 양호'}</span>`+
+      `<span class="${dcls}">${sig.downtrend?'하락 국면':'추세 양호'}</span>`+
       (sig.avgUSD?`<span>평단 <b>$${sig.avgUSD.toFixed(2)}</b></span>`:'');
   }else{
     ha.className='act HOLD';ha.innerHTML='관망 <span class="chip HOLD">HOLD</span>';
@@ -339,9 +355,10 @@ function render(){
     const st=t.status==='open'?'open':'closed';
     const right=t.status==='open'
       ? `$${t.buyPriceUSD.toFixed(2)} · ${t.shares.toFixed(1)}주`
-      : `+${won(t.realizedKRW).replace('₩','₩')}`;
+      : `${t.realizedKRW>=0?'+':''}${won(t.realizedKRW)}`;
     return `<div class="tr"><span>#${t.id} <span class="st ${st}">${st==='open'?'보유':'익절'}</span> `+
-      `<span class="faint">${t.buyDate||''}</span></span><span>${right}</span></div>`;
+      `<span class="faint">${t.buyDate||''}</span></span>`+
+      `<span>${right} <button class="delx" data-del="${t.id}" title="삭제">×</button></span></div>`;
   }).join('');}
 
   // settings mirror
@@ -349,7 +366,7 @@ function render(){
   $('cfgDrop').value=(cfg.dropStep*100);$('cfgTp').value=(cfg.tp*100);
   $('cfgMa').value=cfg.maWindow;$('cfgBand').value=(cfg.trendBand*100);
   $('inFx').value=S.fx;$('cfgProxy').value=S.proxy;
-  if(p!=null)$('inPrice').value=p;
+  if(p!=null)$('inPrice').value=Number(p.toFixed(4));
   const maFull=Engine.sma(closes,cfg.maWindow);
   $('maNote').textContent=maFull!=null?`20일선 $${maFull.toFixed(2)} · 이력 ${closes.length}일`
     :`이동평균 계산에 ${cfg.maWindow}일 필요 (현재 ${closes.length}일)`;
@@ -372,8 +389,16 @@ $('btnBuy').onclick=()=>{
   if(S.price==null){toast('먼저 현재가를 적용하세요');return;}
   const opens=S.tranches.filter(t=>t.status==='open').length;
   if(opens>=S.cfg.splits){toast('분할 한도 도달 — 추가 매수 없음');return;}
+  const budget=(S.cfg.sleeveCapitalKRW/S.cfg.splits);
   const shares=Engine.sharesForTranche(S.cfg,S.price,S.fx);
-  const krwCost=S.cfg.sleeveCapitalKRW/S.cfg.splits;
+  // 하락 국면이면 경고 (신호와 어긋난 매수 방지)
+  const closes=S.priceHistory.map(h=>h.close);
+  const ma=Engine.sma(closes.concat([S.price]),S.cfg.maWindow);
+  const downtrend=ma!=null&&S.price<ma*(1-S.cfg.trendBand);
+  let msg=`${opens+1}번 트란셰 매수 기록\n\n$${S.price.toFixed(2)} · ${shares.toFixed(1)}주 · ${won(budget)}`;
+  if(downtrend) msg+='\n\n⚠ 지금은 20일선 아래(하락 국면)라 전략상 신규 매수 신호가 아닙니다. 그래도 기록할까요?';
+  if(!confirm(msg)) return;
+  const krwCost=budget;
   const id=(S.tranches.reduce((m,t)=>Math.max(m,t.id),0)||0)+1;
   S.tranches.push({id,buyDate:new Date().toISOString().slice(0,10),
     buyPriceUSD:S.price,shares,krwCost,status:'open'});
@@ -388,6 +413,8 @@ $('btnSell').onclick=()=>{
   const t=targets.sort((a,b)=>b.buyPriceUSD-a.buyPriceUSD)[0]; // 가장 높은 매수가부터
   const proceeds=t.shares*S.price*S.fx*(1-0.0015);
   const pnl=proceeds-t.krwCost;
+  const note=winners.length?'':'\n\n⚠ 익절 목표(+'+(S.cfg.tp*100).toFixed(0)+'%) 미달 트란셰입니다.';
+  if(!confirm(`#${t.id}번 익절\n\n$${S.price.toFixed(2)} 매도 · 손익 ${pnl>=0?'+':''}${won(pnl)}${note}`)) return;
   t.status='closed';t.sellDate=new Date().toISOString().slice(0,10);
   t.sellPriceUSD=S.price;t.realizedKRW=pnl;
   S.realizedKRW+=pnl;if(S.cfg.sweep)S.sweptKRW+=pnl;
@@ -395,6 +422,19 @@ $('btnSell').onclick=()=>{
   S.lastBuyPriceUSD=stillOpen.length?stillOpen[stillOpen.length-1].buyPriceUSD:null;
   save();render();toast(`#${t.id}번 익절 ${pnl>=0?'+':''}${won(pnl)}`);
 };
+
+// 트란셰 개별 삭제 (실수 기록 정정용) — 이벤트 위임
+$('trlist').addEventListener('click',(e)=>{
+  const btn=e.target.closest('[data-del]');if(!btn)return;
+  const id=parseInt(btn.dataset.del);
+  const t=S.tranches.find(x=>x.id===id);if(!t)return;
+  if(!confirm(`#${id}번 트란셰 기록을 삭제할까요?`+(t.status==='closed'?'\n(실현익 스윕도 되돌립니다)':'')))return;
+  if(t.status==='closed'){S.realizedKRW-=t.realizedKRW||0;if(S.cfg.sweep)S.sweptKRW-=t.realizedKRW||0;}
+  S.tranches=S.tranches.filter(x=>x.id!==id);
+  const open=S.tranches.filter(x=>x.status==='open');
+  S.lastBuyPriceUSD=open.length?open[open.length-1].buyPriceUSD:null;
+  save();render();toast(`#${id}번 삭제`);
+});
 
 /* SH Portfolio와 동일한 프록시 체인. base + encodeURIComponent(yahooUrl). */
 const PUBLIC_PROXIES=[
@@ -447,11 +487,35 @@ async function fetchPrice(){
     if(!hist.length) throw new Error('empty');
     S.priceHistory=hist.slice(-400);S.price=hist[hist.length-1].close;
     save();render();$('dotProxy').className='dot ok';toast('시세 갱신 · '+hist.length+'일');
+    fetchFx(); // 환율도 함께 갱신 (조용히)
   }catch(e){
     $('dotProxy').className='dot err';
     toast('시세 실패 — 현재가 수동 입력하세요');
   }
 }
+
+/* 환율 자동조회 — Frankfurter(공개 CORS, 프록시 불필요). 실패 시 기존 값 유지. */
+async function fetchFx(){
+  try{
+    const r=await fetchWithTimeout('https://api.frankfurter.app/latest?from=USD&to=KRW',3500);
+    if(!r.ok) return;
+    const j=await r.json();
+    const v=j&&j.rates&&j.rates.KRW;
+    if(v&&isFinite(v)){S.fx=Math.round(v*100)/100;save();$('inFx').value=S.fx;}
+  }catch(e){/* keep manual fx */}
+}
+
+/* ETP 역분할 적용: 열린 트란셰의 매수가×N, 수량÷N (손익 불변, 새 주가 스케일에 정렬) */
+$('btnRs').onclick=()=>{
+  const n=parseFloat($('inRs').value);
+  if(!isFinite(n)||n<=0){toast('역분할 비율을 입력하세요 (예: 10)');return;}
+  const open=S.tranches.filter(t=>t.status==='open');
+  if(!open.length){toast('열린 트란셰가 없습니다');return;}
+  if(!confirm(`역분할 ${n}→1 적용\n\n열린 트란셰 ${open.length}개의 매수가 ×${n}, 수량 ÷${n}\n(원화 비용·손익은 그대로). 되돌릴 수 없습니다.`))return;
+  open.forEach(t=>{t.buyPriceUSD*=n;t.shares/=n;});
+  if(S.lastBuyPriceUSD!=null)S.lastBuyPriceUSD*=n;
+  $('inRs').value='';save();render();toast('역분할 적용 · 시세 다시 불러오세요');
+};
 
 $('btnSaveCfg').onclick=()=>{
   S.cfg.sleeveCapitalKRW=parseInt($('cfgCap').value)||S.cfg.sleeveCapitalKRW;
