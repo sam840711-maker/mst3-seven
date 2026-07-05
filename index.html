@@ -227,7 +227,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.18 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.19 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -570,6 +570,8 @@ function render(){
       fxPnl+=t.shares*inst.price*(S.fx-bfx);});
     const col=pnl>=0?'#22b8a6':'#e5534b';
     const sw=v=>(v>=0?'+':'')+won(v);
+    const usdPnlT=openT.reduce((a,t)=>a+(inst.price-t.buyPriceUSD)*t.shares,0);
+    const swd=v=>(v>=0?'+':'')+'$'+v.toFixed(0);
     const lb=inst.lastBuyPriceUSD, nb=lb!=null?lb*(1-cfg.dropStep):null;
     const tpm=Math.min.apply(null,openT.map(t=>t.buyPriceUSD*(1+cfg.tp)));
     $('holdSum').innerHTML=
@@ -578,7 +580,7 @@ function render(){
       `<div class="row"><span class="k">매입원가</span><b>${won(cost)}</b></div>`+
       `<div class="row"><span class="k">평가액</span><b>${won(mkt)}</b></div>`+
       `<div class="row full"><span class="k">평가손익 <span class="faint">(현재가·환율 기준)</span></span><b style="color:${col}">${pnl>=0?'+':''}${won(pnl)} (${pnl>=0?'+':''}${pctv.toFixed(1)}%)</b></div>`+
-      `<div class="row full" style="font-size:11px"><span class="faint">└ 자산 <b style="color:${assetPnl>=0?'#22b8a6':'#e5534b'}">${sw(assetPnl)}</b> · 환율(미실현 환차) <b style="color:${fxPnl>=0?'#22b8a6':'#e5534b'}">${sw(fxPnl)}</b></span></div>`+
+      `<div class="row full" style="font-size:11px"><span class="faint">└ 달러 <b style="color:${usdPnlT>=0?'#22b8a6':'#e5534b'}">${swd(usdPnlT)}</b> · 자산 <b style="color:${assetPnl>=0?'#22b8a6':'#e5534b'}">${sw(assetPnl)}</b> · 환차 <b style="color:${fxPnl>=0?'#22b8a6':'#e5534b'}">${sw(fxPnl)}</b></span></div>`+
       `<div class="row full" style="margin-top:2px"><span class="k">${nb!=null?`다음 매수가 <b style="color:#3fb950">$${nb.toFixed(2)}</b>`:''}${nb!=null?' · ':''}익절가 <b style="color:#e0a83a">$${tpm.toFixed(2)}</b></span></div>`;
   } else $('holdSum').innerHTML='';
 
@@ -588,16 +590,34 @@ function render(){
     const st=t.status==='open'?'open':'closed';
     const bfx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
     const usd=t.shares*t.buyPriceUSD;
-    let detail;
+    let detail, pnlTop;
     if(t.status==='open'){
-      detail=`체결 $${t.buyPriceUSD.toFixed(2)} · ${Math.round(t.shares)}주 · 총 $${usd.toFixed(0)} · 매입 ${won(t.krwCost)} · 환율 ₩${bfx.toFixed(0)}`;
+      // 달러 손익 / 원화 자산손익(매수환율) / 환차 / 총손익
+      const usdPnl=(inst.price-t.buyPriceUSD)*t.shares;             // $ 기준
+      const assetK=usdPnl*bfx;                                      // 자산손익(매수환율 환산)
+      const fxK=t.shares*inst.price*(S.fx-bfx);                     // 환차손익
+      const totK=assetK+fxK;                                        // = 평가액-원가
+      const pct=t.krwCost>0?totK/t.krwCost*100:0;
+      const col=totK>=0?'#22b8a6':'#e5534b';
+      pnlTop=`<b style="color:${col}">${totK>=0?'+':''}${won(totK)} (${totK>=0?'+':''}${pct.toFixed(1)}%)</b>`;
+      detail=`체결 $${t.buyPriceUSD.toFixed(2)} · ${Math.round(t.shares)}주 · 총 $${usd.toFixed(0)} · 매입 ${won(t.krwCost)} · 환율 ₩${bfx.toFixed(0)}`
+        +`<br>달러손익 <b style="color:${usdPnl>=0?'#22b8a6':'#e5534b'}">${usdPnl>=0?'+':''}$${usdPnl.toFixed(0)}</b>`
+        +` · 자산 <b style="color:${assetK>=0?'#22b8a6':'#e5534b'}">${assetK>=0?'+':''}${won(assetK)}</b>`
+        +` · 환차 <b style="color:${fxK>=0?'#22b8a6':'#e5534b'}">${fxK>=0?'+':''}${won(fxK)}</b>`;
     }else{
-      const cp=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
-      detail=`매도 $${(t.sellPriceUSD||0).toFixed(2)} · 자산손익 ${cp>=0?'+':''}${won(cp)}${t.usdProceeds?` · 수령 $${t.usdProceeds.toFixed(0)}`:''}`;
+      const assetK=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
+      const usdPnl=(t.sellPriceUSD!=null)?(t.sellPriceUSD-t.buyPriceUSD)*t.shares:null;
+      const pct=t.krwCost>0?assetK/t.krwCost*100:0;
+      const col=assetK>=0?'#22b8a6':'#e5534b';
+      pnlTop=`<b style="color:${col}">${assetK>=0?'+':''}${won(assetK)} (${assetK>=0?'+':''}${pct.toFixed(1)}%)</b>`;
+      detail=`매도 $${(t.sellPriceUSD||0).toFixed(2)} · 실현 자산손익 ${assetK>=0?'+':''}${won(assetK)}`
+        +(usdPnl!=null?` · 달러손익 ${usdPnl>=0?'+':''}$${usdPnl.toFixed(0)}`:'')
+        +(t.usdProceeds?` · 수령 $${t.usdProceeds.toFixed(0)}`:'')
+        +`<br><span class="faint">※ 환차는 환전 기록 시 확정</span>`;
     }
     return `<div class="trx"${t.status==='open'?` data-edit="${t.id}"`:''}>`+
       `<div class="trx-top"><span>#${t.id} <span class="st ${st}">${st==='open'?'보유':'익절'}</span> <span class="faint">${t.buyDate||''}</span>${t.status==='open'?' <span class="faint">✎</span>':''}</span>`+
-      `<button class="delx" data-del="${t.id}">×</button></div>`+
+      `<span style="display:flex;gap:8px;align-items:center">${pnlTop}<button class="delx" data-del="${t.id}">×</button></span></div>`+
       `<div class="trx-detail">${detail}</div></div>`;
   }).join('');
 
