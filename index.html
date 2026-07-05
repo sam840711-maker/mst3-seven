@@ -116,9 +116,15 @@
   @media (prefers-reduced-motion:reduce){.sheet{transition:none}}
   .warn-note{font-size:12px;color:var(--sell);background:var(--sell-dim);border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.45}
   .danger-btn{color:var(--danger);border-color:var(--danger-dim)}
+  .ptr{position:fixed;top:0;left:50%;transform:translate(-50%,-44px);z-index:70;
+    background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:999px;padding:7px 16px;font-size:12px;font-family:var(--mono);
+    opacity:0;transition:opacity .12s;pointer-events:none;white-space:nowrap}
+  .ptr.spin{color:var(--buy)}
 </style>
 </head>
 <body>
+<div class="ptr" id="ptr">↓ 당겨서 새로고침</div>
 <div class="wrap">
   <header>
     <div class="brand">세븐스플릿 <span class="tag" id="brandTag">멀티</span></div>
@@ -182,7 +188,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.5 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.7 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -319,47 +325,52 @@ function buildChart(inst){
 
   let vals=closes.concat(ma.filter(v=>v!=null));
   [price,nextBuy,maThresh].concat(tps).forEach(v=>{if(v!=null&&isFinite(v))vals.push(v);});
-  let lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals),pad=(hi-lo)*0.10||1;lo-=pad;hi+=pad;
+  let lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals),pad=(hi-lo)*0.12||1;lo-=pad;hi+=pad;
+  // 기간 고가/저가
+  let iMax=0,iMin=0;for(let i=1;i<n;i++){if(closes[i]>closes[iMax])iMax=i;if(closes[i]<closes[iMin])iMin=i;}
+  const pkHi=closes[iMax], pkLo=closes[iMin];
 
-  const W=344,H=192,ML=34,MR=78,T=10,B=18;
-  const X=i=>ML+i*(W-MR-ML)/(n-1), Y=v=>T+(hi-v)/(hi-lo)*(H-B-T);
+  const W=350,H=196,ML=34,MR=86,T=12,B=18;
+  const PR=W-MR;                                  // plot right edge
+  const X=i=>ML+i*(PR-ML)/(n-1), Y=v=>T+(hi-v)/(hi-lo)*(H-B-T);
   const fx=x=>(+x).toFixed(1);
   const poly=(arr,color,wd)=>{let d='';for(let i=0;i<n;i++){if(arr[i]==null)continue;d+=(d?'L':'M')+fx(X(i))+' '+fx(Y(arr[i]))+' ';}return d?`<path d="${d}" fill="none" stroke="${color}" stroke-width="${wd}" stroke-linejoin="round"/>`:'';};
-  const lblX=W-MR+4;
+  const lblX=PR+5;
   const hline=(v,color,label,op)=>{if(v==null||!isFinite(v)||v<lo||v>hi)return'';const y=fx(Y(v));
-    return `<line x1="${ML}" y1="${y}" x2="${W-MR}" y2="${y}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="${op||0.9}"/>`+
+    return `<line x1="${ML}" y1="${y}" x2="${PR}" y2="${y}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="${op||0.9}"/>`+
       `<text x="${lblX}" y="${fx(+y+3)}" fill="${color}" font-size="9" font-family="monospace">${label} $${v.toFixed(2)}</text>`;};
+  // 플롯 안 라벨의 anchor/좌표를 가장자리 안쪽으로 유지
+  const anchorFor=x=>x<ML+26?'start':(x>PR-26?'end':'middle');
 
   let svg=`<svg viewBox="0 0 ${W} ${H}" width="100%">`;
-  // gridlines + y price labels (left)
   for(let k=0;k<=3;k++){const gv=lo+(hi-lo)*k/3, gy=fx(Y(gv));
-    svg+=`<line x1="${ML}" y1="${gy}" x2="${W-MR}" y2="${gy}" stroke="#232c3b" stroke-width="1"/>`+
+    svg+=`<line x1="${ML}" y1="${gy}" x2="${PR}" y2="${gy}" stroke="#232c3b" stroke-width="1"/>`+
       `<text x="2" y="${fx(+gy+3)}" fill="#5b6675" font-size="8" font-family="monospace">$${gv.toFixed(gv<10?2:1)}</text>`;}
-  // area fill under price
   let area='M'+fx(X(0))+' '+fx(Y(closes[0]))+' ';
   for(let i=1;i<n;i++)area+='L'+fx(X(i))+' '+fx(Y(closes[i]))+' ';
   area+='L'+fx(X(n-1))+' '+fx(H-B)+' L'+fx(X(0))+' '+fx(H-B)+' Z';
   svg+=`<path d="${area}" fill="#22b8a6" opacity="0.08"/>`;
-  // faint TP lines for every open tranche
-  tps.forEach(v=>{if(v>=lo&&v<=hi)svg+=`<line x1="${ML}" y1="${fx(Y(v))}" x2="${W-MR}" y2="${fx(Y(v))}" stroke="#e0a83a" stroke-width="1" stroke-dasharray="2 4" opacity="0.45"/>`;});
-  // reference lines w/ labels
+  tps.forEach(v=>{if(v>=lo&&v<=hi)svg+=`<line x1="${ML}" y1="${fx(Y(v))}" x2="${PR}" y2="${fx(Y(v))}" stroke="#e0a83a" stroke-width="1" stroke-dasharray="2 4" opacity="0.45"/>`;});
   svg+=hline(tpMin,'#e0a83a','익절');
   svg+=hline(maThresh,'#e5534b','하락기준');
   svg+=hline(nextBuy,'#3fb950','매수');
-  // MA + price
   svg+=poly(ma,'#8b98a9',1.1);
   svg+=poly(closes,'#22b8a6',1.9);
-  // current price dot + label
+  // 고가/저가 마커 + 라벨 (플롯 안)
+  const mk=(i,v,label,color,dy)=>{const x=fx(X(i)),y=Y(v);
+    return `<circle cx="${x}" cy="${fx(y)}" r="2.2" fill="${color}"/>`+
+      `<text x="${x}" y="${fx(y+dy)}" fill="${color}" font-size="8" font-family="monospace" text-anchor="${anchorFor(X(i))}">${label} $${v.toFixed(2)}</text>`;};
+  svg+=mk(iMax,pkHi,'고','#cbd5e1',-5);
+  svg+=mk(iMin,pkLo,'저','#cbd5e1',11);
+  // 현재가 점 + 라벨
   const cy=fx(Y(price));
   svg+=`<circle cx="${fx(X(n-1))}" cy="${cy}" r="2.8" fill="#e6edf3"/>`;
   svg+=`<text x="${lblX}" y="${fx(+cy+3)}" fill="#e6edf3" font-size="9" font-family="monospace">현재 $${price.toFixed(2)}</text>`;
-  // dates
   const d0=hist[0].date, d1=hist[n-1].date;
   svg+=`<text x="${ML}" y="${H-5}" fill="#5b6675" font-size="8" font-family="monospace">${d0}</text>`;
-  svg+=`<text x="${W-MR}" y="${H-5}" fill="#5b6675" font-size="8" font-family="monospace" text-anchor="end">${d1}</text>`;
+  svg+=`<text x="${PR}" y="${H-5}" fill="#5b6675" font-size="8" font-family="monospace" text-anchor="end">${d1}</text>`;
   svg+='</svg>';
 
-  // info bar (상세)
   const vsMA=maLast!=null?((price/maLast-1)*100):null;
   const toBuy=nextBuy!=null?((nextBuy/price-1)*100):null;
   const toSell=tpMin!=null?((tpMin/price-1)*100):null;
@@ -374,7 +385,8 @@ function buildChart(inst){
     line2=`포지션 없음 · 20일선 ${above?'<b style="color:#22b8a6">위 → 진입 가능</b>':'<b style="color:#e5534b">아래 → 대기</b>'}`;
   }
   const info=`<div class="cinfo"><div>현재 <b>$${price.toFixed(2)}</b> · ${cfg.maWindow}일선 $${maLast!=null?maLast.toFixed(2):'—'}`+
-    (vsMA!=null?` <span style="color:${vsMA>=0?'#22b8a6':'#e5534b'}">(${sgn(vsMA)})</span>`:'')+`</div><div>${line2}</div></div>`;
+    (vsMA!=null?` <span style="color:${vsMA>=0?'#22b8a6':'#e5534b'}">(${sgn(vsMA)})</span>`:'')+
+    ` · <span class="faint">고 $${pkHi.toFixed(2)} · 저 $${pkLo.toFixed(2)}</span></div><div>${line2}</div></div>`;
 
   const leg=`<div class="legend">
     <span><i style="border-color:#22b8a6"></i>가격</span>
@@ -458,7 +470,8 @@ function render(){
   $('inFx').value=S.fx;$('cfgProxy').value=S.proxy;
   if(p!=null)$('inPrice').value=Number(p.toFixed(4)); else $('inPrice').value='';
   const maFull=Engine.sma(closes,cfg.maWindow);
-  $('maNote').textContent=maFull!=null?`${cfg.maWindow}일선 $${maFull.toFixed(2)} · 이력 ${closes.length}일`:`이동평균에 ${cfg.maWindow}일 필요 (현재 ${closes.length}일)`;
+  $('maNote').textContent=(maFull!=null?`${cfg.maWindow}일선 $${maFull.toFixed(2)} · 이력 ${closes.length}일`:`이동평균에 ${cfg.maWindow}일 필요 (현재 ${closes.length}일)`)
+    +(S.fxSrc?` · 환율 ${S.fxSrc}${S.fxAt?' '+S.fxAt:''}`:'');
   $('backupNote').textContent=S.lastBackup?('마지막 백업 '+S.lastBackup):'백업 없음';
   $('dotProxy').className='dot '+(p!=null?'ok':'warn');
   // settings mirror
@@ -568,9 +581,25 @@ async function fetchPrice(){
     save();render();$('dotProxy').className='dot ok';toast(inst.symbol+' 시세 · '+hist.length+'일');fetchFx();
   }catch(e){$('dotProxy').className='dot err';toast('시세 실패 — 현재가 수동 입력하세요');}
 }
-async function fetchFx(){try{const r=await fetchWithTimeout('https://api.frankfurter.app/latest?from=USD&to=KRW',3500);
-  if(!r.ok)return;const j=await r.json();const v=j&&j.rates&&j.rates.KRW;
-  if(v&&isFinite(v)){S.fx=Math.round(v*100)/100;save();$('inFx').value=S.fx;}}catch(e){}}
+async function fetchFx(){
+  // 1) Yahoo KRW=X (실시간) — 가격과 동일 프록시 체인 (SH Portfolio와 동일 방식)
+  try{
+    const y='https://query1.finance.yahoo.com/v8/finance/chart/KRW=X?interval=1d&range=1d&t='+Date.now();
+    const j=await proxyFetchJson(y);
+    const r=j&&j.chart&&j.chart.result&&j.chart.result[0];
+    let rate=r&&r.meta&&r.meta.regularMarketPrice;
+    if(!rate&&r&&r.indicators&&r.indicators.quote&&r.indicators.quote[0]){
+      const c=r.indicators.quote[0].close||[];rate=c.filter(x=>x!=null).pop();
+    }
+    if(rate&&isFinite(rate)){S.fx=Math.round(rate*100)/100;S.fxAt=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});S.fxSrc='실시간';save();$('inFx').value=S.fx;render();return;}
+  }catch(e){}
+  // 2) Frankfurter 폴백 (ECB 일 1회 기준환율)
+  try{
+    const r=await fetchWithTimeout('https://api.frankfurter.app/latest?from=USD&to=KRW',3500);
+    if(!r.ok)return;const j=await r.json();const v=j&&j.rates&&j.rates.KRW;
+    if(v&&isFinite(v)){S.fx=Math.round(v*100)/100;S.fxSrc='기준(일1회)';save();$('inFx').value=S.fx;render();}
+  }catch(e){}
+}
 
 /* ===== 설정 저장 · 역분할 ===== */
 $('btnSaveCfg').onclick=()=>{
@@ -629,6 +658,31 @@ function closeSettings(){$('settingsView').classList.remove('show');}
 $('btnOpenSettings').onclick=openSettings;
 $('btnCloseSettings').onclick=()=>{closeSettings();if(history.state&&history.state.sheet){try{history.back();}catch(e){}}};
 window.addEventListener('popstate',()=>{if($('settingsView').classList.contains('show'))closeSettings();});
+
+/* ===== 당겨서 새로고침 (PTR) ===== */
+(function(){
+  let startY=null,dist=0,active=false;const THRESH=68,MAXP=130;const ptr=$('ptr');
+  function reset(){startY=null;dist=0;active=false;ptr.style.opacity='0';ptr.style.transform='translate(-50%,-44px)';ptr.classList.remove('spin');ptr.textContent='↓ 당겨서 새로고침';}
+  window.addEventListener('touchstart',e=>{
+    if($('settingsView').classList.contains('show')){startY=null;return;}
+    if(window.scrollY<=0&&e.touches.length===1){startY=e.touches[0].clientY;dist=0;active=false;}else startY=null;
+  },{passive:true});
+  window.addEventListener('touchmove',e=>{
+    if(startY==null)return;const dy=e.touches[0].clientY-startY;
+    if(dy>0&&window.scrollY<=0){active=true;dist=Math.min(dy,MAXP);
+      const pull=Math.min(dist,THRESH+28);
+      ptr.style.opacity=String(Math.min(1,dist/THRESH));
+      ptr.style.transform=`translate(-50%,${pull-44+(dist>=THRESH?10:0)}px)`;
+      ptr.textContent=dist>=THRESH?'놓으면 새로고침':'↓ 당겨서 새로고침';
+      if(dy>6&&e.cancelable)e.preventDefault();
+    }
+  },{passive:false});
+  window.addEventListener('touchend',()=>{
+    if(active&&dist>=THRESH){ptr.classList.add('spin');ptr.textContent='새로고침 중…';ptr.style.opacity='1';ptr.style.transform='translate(-50%,12px)';
+      Promise.resolve(fetchPrice()).finally(()=>setTimeout(reset,350));}
+    else reset();
+  },{passive:true});
+})();
 
 /* ===== boot ===== */
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{});}
