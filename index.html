@@ -224,7 +224,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.16 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.17 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -445,8 +445,8 @@ function buildChart(inst){
   let line2;
   if(open.length){
     line2=`보유 ${open.length}개 · 평단 $${avg.toFixed(2)}`+
-      (nextBuy!=null?` · <b style="color:#3fb950">매수 ${sgn(toBuy)}</b>`:'')+
-      (tpMin!=null?` · <b style="color:#e0a83a">익절 ${sgn(toSell)}</b>`:'');
+      (nextBuy!=null?` · <b style="color:#3fb950">매수 $${nextBuy.toFixed(2)} (${sgn(toBuy)})</b>`:'')+
+      (tpMin!=null?` · <b style="color:#e0a83a">익절 $${tpMin.toFixed(2)} (${sgn(toSell)})</b>`:'');
   }else{
     const above=maLast!=null&&price>=maLast*(1-cfg.trendBand);
     const entry=maThresh!=null?` · <b style="color:#3fb950">예상 진입 $${maThresh.toFixed(2)} 이상</b>`:'';
@@ -552,13 +552,16 @@ function render(){
       fxPnl+=t.shares*inst.price*(S.fx-bfx);});
     const col=pnl>=0?'#22b8a6':'#e5534b';
     const sw=v=>(v>=0?'+':'')+won(v);
+    const lb=inst.lastBuyPriceUSD, nb=lb!=null?lb*(1-cfg.dropStep):null;
+    const tpm=Math.min.apply(null,openT.map(t=>t.buyPriceUSD*(1+cfg.tp)));
     $('holdSum').innerHTML=
       `<div class="row"><span class="k">총 수량</span><b>${Math.round(shares)}주</b></div>`+
       `<div class="row"><span class="k">평단</span><b>$${(openT.reduce((a,t)=>a+t.shares*t.buyPriceUSD,0)/shares).toFixed(2)}</b></div>`+
       `<div class="row"><span class="k">매입원가</span><b>${won(cost)}</b></div>`+
       `<div class="row"><span class="k">평가액</span><b>${won(mkt)}</b></div>`+
       `<div class="row full"><span class="k">평가손익 <span class="faint">(현재가·환율 기준)</span></span><b style="color:${col}">${pnl>=0?'+':''}${won(pnl)} (${pnl>=0?'+':''}${pctv.toFixed(1)}%)</b></div>`+
-      `<div class="row full" style="font-size:11px"><span class="faint">└ 자산 <b style="color:${assetPnl>=0?'#22b8a6':'#e5534b'}">${sw(assetPnl)}</b> · 환율(미실현 환차) <b style="color:${fxPnl>=0?'#22b8a6':'#e5534b'}">${sw(fxPnl)}</b></span></div>`;
+      `<div class="row full" style="font-size:11px"><span class="faint">└ 자산 <b style="color:${assetPnl>=0?'#22b8a6':'#e5534b'}">${sw(assetPnl)}</b> · 환율(미실현 환차) <b style="color:${fxPnl>=0?'#22b8a6':'#e5534b'}">${sw(fxPnl)}</b></span></div>`+
+      `<div class="row full" style="margin-top:2px"><span class="k">${nb!=null?`다음 매수가 <b style="color:#3fb950">$${nb.toFixed(2)}</b>`:''}${nb!=null?' · ':''}익절가 <b style="color:#e0a83a">$${tpm.toFixed(2)}</b></span></div>`;
   } else $('holdSum').innerHTML='';
 
   const tl=$('trlist');
