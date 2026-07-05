@@ -212,7 +212,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.12 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.13 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -382,9 +382,6 @@ function buildChart(inst){
   // 배경 헤일로가 있는 텍스트 (선/영역 위에서도 읽힘)
   const htxt=(x,y,color,anchor,size,content)=>`<text x="${x}" y="${y}" fill="${color}" font-size="${size}" font-family="monospace" text-anchor="${anchor}" paint-order="stroke" stroke="#161b22" stroke-width="2.4" stroke-linejoin="round">${content}</text>`;
   const poly=(arr,color,wd)=>{let d='';for(let i=0;i<n;i++){if(arr[i]==null)continue;d+=(d?'L':'M')+fx(X(i))+' '+fx(Y(arr[i]))+' ';}return d?`<path d="${d}" fill="none" stroke="${color}" stroke-width="${wd}" stroke-linejoin="round"/>`:'';};
-  const hline=(v,color,op)=>{if(v==null||!isFinite(v)||v<lo||v>hi)return'';const y=fx(Y(v));
-    return `<line x1="${ML}" y1="${y}" x2="${PR}" y2="${y}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="${op||0.9}"/>`+
-      htxt(PR-2, fx(+y-2.5), color, 'end', 8.5, '$'+v.toFixed(2));};
   const anchorFor=x=>x<ML+26?'start':(x>PR-26?'end':'middle');
 
   let svg=`<svg viewBox="0 0 ${W} ${H}" width="100%">`;
@@ -396,10 +393,15 @@ function buildChart(inst){
   area+='L'+fx(X(n-1))+' '+fx(H-B)+' L'+fx(X(0))+' '+fx(H-B)+' Z';
   svg+=`<path d="${area}" fill="#22b8a6" opacity="0.08"/>`;
   tps.forEach(v=>{if(v>=lo&&v<=hi)svg+=`<line x1="${ML}" y1="${fx(Y(v))}" x2="${PR}" y2="${fx(Y(v))}" stroke="#e0a83a" stroke-width="1" stroke-dasharray="2 4" opacity="0.45"/>`;});
-  svg+=hline(tpMin,'#e0a83a');
-  // 포지션 없으면: 20일선 하한을 "예상 첫 진입선"(초록)으로. 보유 중이면: 하락기준(빨강)
-  svg+=hline(maThresh, open.length? '#e5534b' : '#3fb950');
-  svg+=hline(nextBuy,'#3fb950');
+  // 기준선: 선은 바로 그리고, 우측 값 라벨은 모아서 겹침 방지 후 렌더
+  const rlabels=[];
+  [[tpMin,'#e0a83a'],[maThresh, open.length?'#e5534b':'#3fb950'],[nextBuy,'#3fb950']].forEach(pair=>{
+    const v=pair[0],color=pair[1];
+    if(v==null||!isFinite(v)||v<lo||v>hi)return;
+    const y=Y(v);
+    svg+=`<line x1="${ML}" y1="${fx(y)}" x2="${PR}" y2="${fx(y)}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.9"/>`;
+    rlabels.push({y,color,text:'$'+v.toFixed(2)});
+  });
   svg+=poly(ma,'#8b98a9',1.1);
   svg+=poly(closes,'#22b8a6',1.9);
   // 고가/저가 마커 + 라벨 (플롯 안, 헤일로)
@@ -408,10 +410,17 @@ function buildChart(inst){
       htxt(x, fx(y+dy), color, anchorFor(X(i)), 8, label+' $'+v.toFixed(2));};
   svg+=mk(iMax,pkHi,'고','#cbd5e1',-5);
   svg+=mk(iMin,pkLo,'저','#cbd5e1',11);
-  // 현재가 점 + 라벨 (플롯 안 우측, 헤일로)
-  const cy=fx(Y(price));
-  svg+=`<circle cx="${fx(X(n-1))}" cy="${cy}" r="2.8" fill="#e6edf3"/>`;
-  svg+=htxt(PR-2, fx(+cy-5.5), '#e6edf3','end',8.5,'현재 $'+price.toFixed(2));
+  // 현재가 마커는 실제 위치, 라벨은 우측 라벨군에 합류
+  const cyv=Y(price);
+  svg+=`<circle cx="${fx(X(n-1))}" cy="${fx(cyv)}" r="2.8" fill="#e6edf3"/>`;
+  rlabels.push({y:cyv,color:'#e6edf3',text:'현재 $'+price.toFixed(2)});
+  // 세로 겹침 제거: y 정렬 → 최소 간격 확보 → 바닥/천장 보정
+  rlabels.sort((a,b)=>a.y-b.y);
+  const gap=10.5, topY=T+7, botY=H-B-2;
+  for(let i=1;i<rlabels.length;i++){if(rlabels[i].y-rlabels[i-1].y<gap)rlabels[i].y=rlabels[i-1].y+gap;}
+  if(rlabels.length){const over=rlabels[rlabels.length-1].y-botY;if(over>0)rlabels.forEach(l=>l.y-=over);
+    if(rlabels[0].y<topY){const dd=topY-rlabels[0].y;rlabels.forEach(l=>l.y+=dd);}}
+  rlabels.forEach(l=>{svg+=htxt(PR-2, fx(l.y+2.8), l.color, 'end', 8.5, l.text);});
   const d0=hist[0].date, d1=hist[n-1].date;
   svg+=`<text x="${ML}" y="${H-5}" fill="#5b6675" font-size="8" font-family="monospace">${d0}</text>`;
   svg+=`<text x="${PR}" y="${H-5}" fill="#5b6675" font-size="8" font-family="monospace" text-anchor="end">${d1}</text>`;
