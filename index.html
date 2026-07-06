@@ -227,7 +227,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.21 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.22 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -249,7 +249,13 @@
         <div><label>트란셰 익절 %</label><input id="cfgTp" inputmode="decimal"></div>
         <div><label>추세필터 MA (일)</label><input id="cfgMa" inputmode="numeric"></div>
         <div><label>MA 밴드 %</label><input id="cfgBand" inputmode="decimal"></div>
+        <div><label>복리 재투자 %</label><select id="cfgReinvest" style="width:100%;padding:10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink)">
+          <option value="0">0% (수익 확정·고정)</option>
+          <option value="0.5">50% (절반 복리)</option>
+          <option value="1">100% (전액 복리)</option></select></div>
       </div>
+      <div class="warn-note" style="margin-top:2px">복리 재투자: 익절 수익을 슬리브에 재투입 → 트란셰 크기 자동 성장.
+        100%면 상승 사이클마다 눈덩이(수익↑)지만 낙폭도 커집니다(백테스트 MST3 −12%→−46%).</div>
       <div class="warn-note">공격형 확정값: 분할 10 / −6% / +8% / MA20. 레버리지 ETP는
         낙폭이 깊으니(백테스트 OOS −37%) 규칙대로 버틸 것. 무레버리지·무신용·하드캡 준수.</div>
       <div class="row"><button id="btnSaveCfg">이 종목 설정 저장</button></div>
@@ -295,7 +301,7 @@
 <script>
 /* ===== 검증된 세븐스플릿 엔진 ===== */
 const Engine=(function(){
-  const DEFAULT_CFG={sleeveCapitalKRW:30000000,splits:10,dropStep:0.06,tp:0.08,maWindow:20,trendBand:0.02,sweep:true};
+  const DEFAULT_CFG={sleeveCapitalKRW:30000000,splits:10,dropStep:0.06,tp:0.08,maWindow:20,trendBand:0.02,sweep:true,reinvest:0};
   function sma(c,w){if(!c||c.length<w)return null;let s=0;for(let i=c.length-w;i<c.length;i++)s+=c[i];return s/w;}
   function signal(state,market,cfg){
     cfg=Object.assign({},DEFAULT_CFG,cfg||{});
@@ -493,6 +499,8 @@ function renderTabs(){
   el.appendChild(add);
 }
 
+/* 복리화: 실현 수익(자산)을 재투자 비율만큼 슬리브에 더함 → 유효 슬리브 */
+function effSleeve(inst,cfg){const ri=cfg.reinvest||0;return cfg.sleeveCapitalKRW+Math.round(ri*Math.max(0,inst.realizedKRW||0));}
 function render(){
   renderTabs();
   const inst=A(), cfg=inst.cfg, p=inst.price;
@@ -548,8 +556,10 @@ function render(){
     lad.appendChild(d);}
 
   const used=opens.reduce((a,t)=>a+t.krwCost,0);
-  $('stUsed').innerHTML=won(used)+' <small>/ '+won(cfg.sleeveCapitalKRW)+'</small>';
-  $('stFree').textContent=won(cfg.sleeveCapitalKRW-used);
+  const eSlv=effSleeve(inst,cfg);
+  const grown=eSlv-cfg.sleeveCapitalKRW;
+  $('stUsed').innerHTML=won(used)+' <small>/ '+won(eSlv)+(grown>0?` <span style="color:#22b8a6">(+${won(grown)} 복리)</span>`:'')+'</small>';
+  $('stFree').textContent=won(eSlv-used);
   const rv=$('stReal');rv.textContent=(inst.sweptKRW>=0?'+':'')+won(inst.sweptKRW);
   rv.className='v '+(inst.sweptKRW>0?'pos':inst.sweptKRW<0?'neg':'');
   $('stOpen').innerHTML=opens.length+' <small>/ '+cfg.splits+'</small>';
@@ -642,6 +652,7 @@ function render(){
   $('cfgCap').value=cfg.sleeveCapitalKRW;$('cfgSplits').value=cfg.splits;
   $('cfgDrop').value=(cfg.dropStep*100);$('cfgTp').value=(cfg.tp*100);
   $('cfgMa').value=cfg.maWindow;$('cfgBand').value=(cfg.trendBand*100);
+  if($('cfgReinvest'))$('cfgReinvest').value=String(cfg.reinvest||0);
   $('btnDelInst').style.display=S.instruments.length>1?'':'none';
 }
 
@@ -692,8 +703,9 @@ $('btnBuy').onclick=()=>{
   if(inst.price==null){toast('먼저 현재가를 적용하세요');return;}
   const opens=inst.tranches.filter(t=>t.status==='open').length;
   if(opens>=cfg.splits){toast('분할 한도 도달 — 추가 매수 없음');return;}
-  const budget=cfg.sleeveCapitalKRW/cfg.splits;
-  const shares=Engine.sharesForTranche(cfg,inst.price,S.fx);
+  const ecfg=Object.assign({},cfg,{sleeveCapitalKRW:effSleeve(inst,cfg)});
+  const budget=ecfg.sleeveCapitalKRW/ecfg.splits;
+  const shares=Engine.sharesForTranche(ecfg,inst.price,S.fx);
   openModal(`매수 기록 · ${opens+1}번 트란셰`,[
     {id:'emPrice',label:'체결가 (USD)',val:Number(inst.price.toFixed(4))},
     {id:'emShares',label:'수량 (주)',val:Math.round(shares)},
@@ -874,6 +886,7 @@ $('btnSaveCfg').onclick=()=>{
   cfg.tp=(parseFloat($('cfgTp').value)||8)/100;
   cfg.maWindow=parseInt($('cfgMa').value)||20;
   cfg.trendBand=(parseFloat($('cfgBand').value)||2)/100;
+  if($('cfgReinvest'))cfg.reinvest=parseFloat($('cfgReinvest').value)||0;
   S.proxy=$('cfgProxy').value.trim();
   save();render();toast('저장됨');
 };
