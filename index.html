@@ -234,7 +234,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.23 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.24 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -952,14 +952,11 @@ async function driveBackup(silent){const meta={name:'seven_backup.json',parents:
 
 /* ===== 데일리 자동 백업 ===== */
 function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-let autoTried=false;
 function maybeAutoBackup(){
   if(!S.autoBackup)return;
   if(S.lastBackupDay===todayStr())return;   // 오늘 이미 백업됨
-  if(autoTried)return;                        // 세션당 1회만 시도(무한 프롬프트 방지)
-  if(!gisReady())return;                      // 구글 스크립트 미로드면 조용히 스킵
-  autoTried=true;
-  try{withToken(()=>driveBackup(true),false);}catch(e){}   // 조용히(비대화형) 시도
+  if(!accessToken)return;                     // 토큰 없으면 조용히 스킵 (로그인 창 안 띄움 → 깜박임 방지)
+  try{driveBackup(true);}catch(e){}           // 이미 인증된 경우만 조용히 백업
 }
 /* 매매 직후: 이미 인증돼 있으면 즉시 조용히 백업(프롬프트 없음) */
 function backupSoon(){if(S.autoBackup&&accessToken){try{driveBackup(true);}catch(e){}}}
@@ -1006,7 +1003,7 @@ window.addEventListener('popstate',()=>{if($('settingsView').classList.contains(
 if($('chkAutoBackup')){
   $('chkAutoBackup').checked=!!S.autoBackup;
   $('chkAutoBackup').addEventListener('change',(e)=>{S.autoBackup=e.target.checked;save();render();
-    if(S.autoBackup){autoTried=false;maybeAutoBackup();}});
+    if(S.autoBackup){maybeAutoBackup();}});
 }
 
 /* ===== boot ===== */
