@@ -227,7 +227,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.20 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.21 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -272,7 +272,9 @@
     <div class="card">
       <h3>Google Drive 백업 (전체 종목)</h3>
       <div class="row"><button class="ghost" id="btnBackup">지금 백업</button><button class="ghost" id="btnRestore">복원</button></div>
-      <div class="faint" id="backupNote" style="font-size:11px;font-family:var(--mono)"></div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="chkAutoBackup" style="width:18px;height:18px"> 데일리 자동 백업 (하루 1회, 앱 실행 시)</label>
+      <div class="faint" id="backupNote" style="font-size:11px;font-family:var(--mono);margin-top:6px"></div>
     </div>
     <div class="card">
       <h3>데이터</h3>
@@ -347,6 +349,8 @@ function migrate(o){
   return blank();
 }
 function normalize(s){
+  if(s&&typeof s.autoBackup==='undefined')s.autoBackup=true;   // 데일리 자동 백업 기본 ON
+  if(s&&typeof s.lastBackupDay==='undefined')s.lastBackupDay=null;
   if(s&&s.instruments)s.instruments.forEach(i=>{
     if(i.usdPool==null)i.usdPool=0;
     if(i.usdPoolKrwCost==null)i.usdPoolKrwCost=0;
@@ -630,7 +634,7 @@ function render(){
   const maFull=Engine.sma(closes,cfg.maWindow);
   $('maNote').textContent=(maFull!=null?`${cfg.maWindow}일선 $${maFull.toFixed(2)} · 이력 ${closes.length}일`:`이동평균에 ${cfg.maWindow}일 필요 (현재 ${closes.length}일)`)
     +(S.fxSrc?` · 환율 ${S.fxSrc}${S.fxAt?' '+S.fxAt:''}`:'');
-  $('backupNote').textContent=S.lastBackup?('마지막 백업 '+S.lastBackup):'백업 없음';
+  $('backupNote').textContent=(S.autoBackup?'자동 백업 ON · ':'자동 백업 OFF · ')+(S.lastBackup?('마지막 '+S.lastBackup):'백업 없음');
   $('dotProxy').className='dot '+(p!=null?'ok':'warn');
   // settings mirror
   $('setSymName').textContent=inst.name||inst.symbol;$('rsSym').textContent=inst.symbol;
@@ -707,7 +711,7 @@ $('btnBuy').onclick=()=>{
     const buyFx=kr/(sh*p);
     const id=(inst.tranches.reduce((m,t)=>Math.max(m,t.id),0)||0)+1;
     inst.tranches.push({id,buyDate:today(),buyPriceUSD:p,shares:sh,krwCost:kr,buyFx,status:'open'});
-    inst.lastBuyPriceUSD=p;save();render();toast(`#${id}번 매수 기록 (₩${Math.round(kr).toLocaleString()})`);
+    inst.lastBuyPriceUSD=p;save();render();toast(`#${id}번 매수 기록 (₩${Math.round(kr).toLocaleString()})`);backupSoon();
   });
 };
 
@@ -739,7 +743,7 @@ $('btnSell').onclick=()=>{
     inst.realizedKRW+=assetPnlKRW;if(cfg.sweep)inst.sweptKRW+=assetPnlKRW;
     inst.usdPool=(inst.usdPool||0)+ud;inst.usdPoolKrwCost=(inst.usdPoolKrwCost||0)+ud*buyFx;
     const so=inst.tranches.filter(x=>x.status==='open');inst.lastBuyPriceUSD=so.length?so[so.length-1].buyPriceUSD:null;
-    save();render();toast(`#${t.id}번 익절 · 미환전 +$${ud.toFixed(2)}`);
+    save();render();toast(`#${t.id}번 익절 · 미환전 +$${ud.toFixed(2)}`);backupSoon();
   });
 };
 
@@ -763,7 +767,7 @@ function openConvertModal(){
     const fxPnl=ud*(fx-costFx);
     inst.usdPool=pool-ud;inst.usdPoolKrwCost=Math.max(0,(inst.usdPoolKrwCost||0)-ud*costFx);
     inst.fxRealizedKRW=(inst.fxRealizedKRW||0)+fxPnl;
-    save();render();toast(`환전 $${ud.toFixed(2)} · 환차 ${fxPnl>=0?'+':''}${won(fxPnl)}`);
+    save();render();toast(`환전 $${ud.toFixed(2)} · 환차 ${fxPnl>=0?'+':''}${won(fxPnl)}`);backupSoon();
   });
 }
 $('fxStat').addEventListener('click',(e)=>{if(e.target.closest('[data-conv]'))openConvertModal();});
@@ -784,7 +788,7 @@ $('trlist').addEventListener('click',(e)=>{
     inst.tranches=inst.tranches.filter(x=>x.id!==id);
     const open=inst.tranches.filter(x=>x.status==='open');
     inst.lastBuyPriceUSD=open.length?open[open.length-1].buyPriceUSD:null;
-    save();render();toast(`#${id}번 삭제`);return;
+    save();render();toast(`#${id}번 삭제`);return;backupSoon();
   }
   const ed=e.target.closest('[data-edit]');
   if(ed)openEditModal(inst,parseInt(ed.dataset.edit));
@@ -806,7 +810,7 @@ function openEditModal(inst,id){
     if(!(p>0&&sh>0&&kr>0)){toast('값을 확인하세요');return false;}
     t.buyPriceUSD=p;t.shares=sh;t.krwCost=kr;t.buyFx=kr/(sh*p);
     const so=inst.tranches.filter(x=>x.status==='open');inst.lastBuyPriceUSD=so.length?so[so.length-1].buyPriceUSD:null;
-    save();render();toast(`#${id}번 수정됨`);
+    save();render();toast(`#${id}번 수정됨`);backupSoon();
   });
 }
 
@@ -895,19 +899,34 @@ function initGIS(){if(!gisReady())return null;if(!tokenClient)tokenClient=google
   client_id:CLIENT_ID,scope:'https://www.googleapis.com/auth/drive.appdata',
   callback:(resp)=>{if(resp.access_token){accessToken=resp.access_token;sessionStorage.setItem('gd_tok',accessToken);if(tokenClient._then)tokenClient._then();}}});return tokenClient;}
 function withToken(fn,inter){const tc=initGIS();if(!tc){toast('Google 스크립트 로딩 필요');return;}if(accessToken){fn();return;}tc._then=fn;tc.requestAccessToken({prompt:inter?'':'none'});}
-async function driveBackup(){const meta={name:'seven_backup.json',parents:['appDataFolder']};let id=null;
+async function driveBackup(silent){const meta={name:'seven_backup.json',parents:['appDataFolder']};let id=null;
   try{const q=await fetch("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='seven_backup.json'",{headers:{Authorization:'Bearer '+accessToken}});const jd=await q.json();if(jd.files&&jd.files[0])id=jd.files[0].id;}catch(e){}
   const b='-------s7'+Date.now();
   const pre='--'+b+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify(id?{name:meta.name}:meta)+'\r\n--'+b+'\r\nContent-Type: application/json\r\n\r\n';
   const payload=new Blob([pre,JSON.stringify(S),'\r\n--'+b+'--'],{type:'multipart/related; boundary='+b});
   const url=id?`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=multipart`:'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
   const r=await fetch(url,{method:id?'PATCH':'POST',headers:{Authorization:'Bearer '+accessToken},body:payload});
-  if(r.ok){S.lastBackup=new Date().toLocaleString('ko-KR');save();render();$('dotBackup').className='dot ok';toast('백업 완료');}else{$('dotBackup').className='dot err';toast('백업 실패');}}
+  if(r.ok){S.lastBackup=new Date().toLocaleString('ko-KR');S.lastBackupDay=todayStr();save();render();$('dotBackup').className='dot ok';if(!silent)toast('백업 완료');}
+  else{$('dotBackup').className='dot err';if(!silent)toast('백업 실패');}}
+
+/* ===== 데일리 자동 백업 ===== */
+function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+let autoTried=false;
+function maybeAutoBackup(){
+  if(!S.autoBackup)return;
+  if(S.lastBackupDay===todayStr())return;   // 오늘 이미 백업됨
+  if(autoTried)return;                        // 세션당 1회만 시도(무한 프롬프트 방지)
+  if(!gisReady())return;                      // 구글 스크립트 미로드면 조용히 스킵
+  autoTried=true;
+  try{withToken(()=>driveBackup(true),false);}catch(e){}   // 조용히(비대화형) 시도
+}
+/* 매매 직후: 이미 인증돼 있으면 즉시 조용히 백업(프롬프트 없음) */
+function backupSoon(){if(S.autoBackup&&accessToken){try{driveBackup(true);}catch(e){}}}
 async function driveRestore(){try{const q=await fetch("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='seven_backup.json'",{headers:{Authorization:'Bearer '+accessToken}});const jd=await q.json();
   if(!jd.files||!jd.files[0]){toast('백업 파일 없음');return;}
   const f=await fetch('https://www.googleapis.com/drive/v3/files/'+jd.files[0].id+'?alt=media',{headers:{Authorization:'Bearer '+accessToken}});
   S=normalize(migrate(await f.json()));save();render();toast('복원 완료');}catch(e){toast('복원 실패');}}
-$('btnBackup').onclick=()=>withToken(driveBackup,true);
+$('btnBackup').onclick=()=>withToken(()=>driveBackup(false),true);
 $('btnRestore').onclick=()=>withToken(driveRestore,true);
 
 /* ===== 설정 시트 ===== */
@@ -942,9 +961,19 @@ window.addEventListener('popstate',()=>{if($('settingsView').classList.contains(
   },{passive:true});
 })();
 
+/* 자동 백업 토글 */
+if($('chkAutoBackup')){
+  $('chkAutoBackup').checked=!!S.autoBackup;
+  $('chkAutoBackup').addEventListener('change',(e)=>{S.autoBackup=e.target.checked;save();render();
+    if(S.autoBackup){autoTried=false;maybeAutoBackup();}});
+}
+
 /* ===== boot ===== */
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{});}
 render();
+// 데일리 자동 백업: 부팅 직후 + 구글 스크립트 로드 후 재시도
+setTimeout(maybeAutoBackup,1500);
+window.addEventListener('load',()=>setTimeout(maybeAutoBackup,2500));
 </script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
