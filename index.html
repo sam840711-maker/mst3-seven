@@ -50,6 +50,12 @@
   .hero .why{color:var(--muted);font-size:14px;margin-top:4px}
   .hero .why2{font-family:var(--mono);font-size:11.5px;margin-top:6px;line-height:1.55;color:var(--muted)}
   .hero .why2 b{color:var(--ink)}
+  #turnAlert:empty{display:none}
+  .turn-alert{margin-top:10px;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.55;
+    font-family:var(--mono);border:1px solid}
+  .turn-alert.go{background:rgba(34,184,166,.10);border-color:#22b8a6;color:#c9f5ee}
+  .turn-alert.watch{background:rgba(224,168,58,.10);border-color:#e0a83a;color:#f0dcae}
+  .turn-alert b{color:#fff}
   .hero .px{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:14px;font-family:var(--mono);font-size:13px}
   .hero .px span{white-space:nowrap;display:inline-flex;gap:5px;align-items:baseline}
   .hero .px b{color:var(--ink);font-weight:600}
@@ -171,6 +177,7 @@
     <div class="act HOLD" id="heroAct">관망 <span class="chip HOLD">HOLD</span></div>
     <div class="why" id="heroWhy">시세를 불러오거나 현재가를 입력하세요.</div>
     <div class="why2" id="heroWhy2"></div>
+    <div id="turnAlert"></div>
     <div class="px" id="heroPx"></div>
   </div>
 
@@ -227,7 +234,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.22 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.23 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -531,6 +538,27 @@ function render(){
       else if(inst.lastBuyPriceUSD!=null&&p>inst.lastBuyPriceUSD*(1-cfg.dropStep)) hw2+=`<br><span class="faint">→ 다음 매수가까지 하락하면 진입</span>`;
     }
     $('heroWhy2').innerHTML=hw2;
+    // ===== 상승 전환 판정 알림 (MSTU 전환/공격성 상향 시점) =====
+    (function(){
+      const cl=inst.priceHistory.map(h=>h.close).concat(p!=null?[p]:[]);
+      const w=cfg.maWindow;
+      if(cl.length<w+6){$('turnAlert').innerHTML='';return;}
+      const maS=[];
+      for(let i=0;i<cl.length;i++){if(i<w-1){maS.push(null);continue;}let s=0;for(let k=i-w+1;k<=i;k++)s+=cl[k];maS.push(s/w);}
+      let above=0;
+      for(let i=cl.length-1;i>=0;i--){if(maS[i]!=null&&cl[i]>maS[i])above++;else break;}
+      const last=maS[maS.length-1], prev=maS[maS.length-6];
+      const maRising=last!=null&&prev!=null&&last>prev;
+      const need=3;
+      if(above>=need&&maRising){
+        $('turnAlert').innerHTML=`<div class="turn-alert go">🚀 <b>상승 전환 신호</b> — 20일선 위 ${above}일 연속 + 20일선 상승 전환<br><span style="opacity:.85">→ MSTU 전환·공격성 상향(복리 ON) <b>검토 시점</b>. 아래 체크리스트 확인 후 실행.</span></div>`;
+      } else if(!sig.downtrend){
+        const remain=Math.max(0,need-above);
+        $('turnAlert').innerHTML=`<div class="turn-alert watch">⏳ <b>전환 관찰 중</b> — 20일선 위 ${above}일${remain>0?` (조건까지 ${remain}일 더)`:''}${maRising?'':' · 20일선 아직 하락'}<br><span style="opacity:.85">→ 조건(3일 연속+20일선 상승) 충족 시 전환 알림. 아직 성급한 전환 금물.</span></div>`;
+      } else {
+        $('turnAlert').innerHTML=`<div class="turn-alert watch">🔻 <b>하락 국면</b> — 20일선 아래. 전환·공격성 상향 대기.<br><span style="opacity:.85">→ 세븐 기본(복리 OFF)으로 방어. 20일선 회복부터 관찰 시작.</span></div>`;
+      }
+    })();
     const ma=sig.maValue!=null?('$'+sig.maValue.toFixed(2)):'—';
     const dcls=sig.downtrend?'down':'up';
     $('heroPx').innerHTML=`<span>현재가 <b>$${p.toFixed(2)}</b></span>`+
@@ -539,7 +567,7 @@ function render(){
       (sig.avgUSD?`<span>평단 <b>$${sig.avgUSD.toFixed(2)}</b></span>`:'');
   }else{
     ha.className='act HOLD';ha.innerHTML='관망 <span class="chip HOLD">HOLD</span>';
-    $('heroWhy').textContent='시세를 불러오거나 현재가를 입력하세요.';$('heroPx').innerHTML='';$('heroWhy2').innerHTML='';
+    $('heroWhy').textContent='시세를 불러오거나 현재가를 입력하세요.';$('heroPx').innerHTML='';$('heroWhy2').innerHTML='';$('turnAlert').innerHTML='';
   }
 
   $('chartCard').innerHTML=buildChart(inst);
