@@ -195,6 +195,7 @@
 
   <!-- chart -->
   <div class="ranges" id="ranges">
+    <button data-range="1W">1주</button>
     <button data-range="1M">1개월</button>
     <button data-range="3M">3개월</button>
     <button data-range="6M">6개월</button>
@@ -246,7 +247,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.25 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.26 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -399,7 +400,7 @@ function openLots(inst){return inst.tranches.filter(t=>t.status==='open').map(t=
 /* ===== SVG 차트 + 기준선 (상세) ===== */
 function buildChart(inst){
   const cfg=inst.cfg, full=inst.priceHistory.map(h=>h.close);
-  const RANGES={'1M':22,'3M':66,'6M':132,'1Y':252,'ALL':1e9};
+  const RANGES={'1W':5,'1M':22,'3M':66,'6M':132,'1Y':252,'ALL':1e9};
   const N=RANGES[S.chartRange||'3M'];
   const hist=inst.priceHistory.slice(-N), closes=hist.map(h=>h.close), n=closes.length;
   if(n<2) return '<div class="faint" style="text-align:center;padding:28px 0;font-size:12px">시세 이력이 쌓이면 차트가 표시됩니다 (시세 불러오기)</div>';
