@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0e1116">
 <title>세븐스플릿 · 멀티</title>
 <link rel="manifest" href="manifest.json">
@@ -56,6 +56,18 @@
   .turn-alert.go{background:rgba(34,184,166,.10);border-color:#22b8a6;color:#c9f5ee}
   .turn-alert.watch{background:rgba(224,168,58,.10);border-color:#e0a83a;color:#f0dcae}
   .turn-alert b{color:#fff}
+  .chart{cursor:pointer;position:relative}
+  .chart::after{content:'⤢ 크게';position:absolute;top:8px;right:10px;font-size:10px;
+    font-family:var(--mono);color:var(--faint);background:rgba(13,17,23,.6);padding:2px 6px;border-radius:6px;pointer-events:none}
+  #chartFull{position:fixed;inset:0;background:#0b0e13;z-index:120;display:none}
+  #chartFull.show{display:block}
+  #chartFull .rot{position:absolute;top:50%;left:50%;width:100vh;height:100vw;
+    transform:translate(-50%,-50%) rotate(90deg);transform-origin:center;display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box}
+  #chartFull .rot svg{width:100%;height:auto}
+  #chartFullClose{position:fixed;top:14px;left:14px;z-index:121;background:var(--panel2);
+    color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:13px;font-family:var(--mono)}
+  #chartFull .cfhint{position:fixed;bottom:12px;left:0;right:0;text-align:center;color:var(--faint);
+    font-size:11px;font-family:var(--mono);z-index:121}
   .hero .px{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:14px;font-family:var(--mono);font-size:13px}
   .hero .px span{white-space:nowrap;display:inline-flex;gap:5px;align-items:baseline}
   .hero .px b{color:var(--ink);font-weight:600}
@@ -234,11 +246,12 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.24 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.25 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
 <!-- settings sheet -->
+<div id="chartFull"><button id="chartFullClose">✕ 닫기</button><div class="rot" id="chartFullRot"></div><div class="cfhint">가로 전체화면 · 탭하면 닫기</div></div>
 <div class="sheet" id="settingsView">
   <div class="sheet-head"><span>설정 · 백업</span>
     <button id="btnCloseSettings" class="sheet-close">닫기</button></div>
@@ -1005,6 +1018,19 @@ if($('chkAutoBackup')){
   $('chkAutoBackup').addEventListener('change',(e)=>{S.autoBackup=e.target.checked;save();render();
     if(S.autoBackup){maybeAutoBackup();}});
 }
+
+/* ===== 차트 전체화면(가로) 보기 ===== */
+function openChartFull(){const inst=A();if(!inst)return;
+  const rot=document.getElementById('chartFullRot');if(!rot)return;
+  rot.innerHTML=buildChart(inst);
+  document.getElementById('chartFull').classList.add('show');
+  try{history.pushState({chartFull:1},'');}catch(e){}}
+function closeChartFull(){const cf=document.getElementById('chartFull');if(cf)cf.classList.remove('show');}
+if($('chartCard'))$('chartCard').addEventListener('click',openChartFull);
+if($('chartFullClose'))$('chartFullClose').addEventListener('click',()=>{try{history.back();}catch(e){closeChartFull();}});
+if(document.getElementById('chartFull'))document.getElementById('chartFull').addEventListener('click',(e)=>{
+  if(e.target.id==='chartFull'||e.target.id==='chartFullRot'||(e.target.className&&(''+e.target.className).indexOf('cfhint')>=0)){try{history.back();}catch(err){closeChartFull();}}});
+window.addEventListener('popstate',()=>{if(document.getElementById('chartFull')&&document.getElementById('chartFull').classList.contains('show'))closeChartFull();});
 
 /* ===== boot ===== */
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{});}
