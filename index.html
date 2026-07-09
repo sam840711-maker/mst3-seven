@@ -247,7 +247,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.26 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.28 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -893,7 +893,11 @@ async function fetchPrice(){
     const hist=[];for(let i=0;i<r.timestamp.length;i++){const v=(adj&&adj[i]!=null)?adj[i]:q[i];
       if(v!=null)hist.push({date:new Date(r.timestamp[i]*1000).toISOString().slice(0,10),close:v});}
     if(!hist.length)throw new Error('empty');
-    inst.priceHistory=hist.slice(-800);inst.price=hist[hist.length-1].close;
+    const px=(r.meta&&r.meta.regularMarketPrice!=null)?r.meta.regularMarketPrice:hist[hist.length-1].close;
+    const mt=r.meta&&r.meta.regularMarketTime;
+    const pxDate=mt?new Date(mt*1000).toISOString().slice(0,10):hist[hist.length-1].date;
+    if(hist[hist.length-1].date===pxDate)hist[hist.length-1].close=px; else hist.push({date:pxDate,close:px});
+    inst.priceHistory=hist.slice(-800);inst.price=px;
     save();render();$('dotProxy').className='dot ok';toast(inst.symbol+' 시세 · '+hist.length+'일');fetchFx();
   }catch(e){$('dotProxy').className='dot err';toast('시세 실패 — 현재가 수동 입력하세요');}
 }
