@@ -247,7 +247,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.29 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.30 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -391,7 +391,7 @@ function normalize(s){
   });
   return s;
 }
-function load(){try{const r=localStorage.getItem(KEY);if(!r)return blank();return normalize(migrate(JSON.parse(r)));}catch(e){return blank();}}
+function load(){try{const r=localStorage.getItem(KEY);if(!r)return normalize(blank());return normalize(migrate(JSON.parse(r)));}catch(e){return normalize(blank());}}
 function save(){localStorage.setItem(KEY,JSON.stringify(S));}
 let S=load();
 function A(){return S.instruments.find(i=>i.id===S.activeId)||S.instruments[0];}
@@ -962,9 +962,10 @@ $('btnReset').onclick=()=>{if(confirm('모든 종목·데이터를 지웁니다.
 
 /* ===== Google Drive 백업 (무음 우선 · 만료 추적 · 영속 연결 — SH Portfolio 패턴) ===== */
 let tokenClient=null,accessToken=null,tokenExp=0;
-(function(){try{const t=JSON.parse(sessionStorage.getItem('mst3_gd_tok')||'null');if(t&&t.tok){accessToken=t.tok;tokenExp=t.exp||0;}}catch(e){}})();
+(function(){try{const raw=localStorage.getItem('mst3_gd_tok')||sessionStorage.getItem('mst3_gd_tok')||'null';const t=JSON.parse(raw);if(t&&t.tok&&Date.now()<(t.exp||0)-60000){accessToken=t.tok;tokenExp=t.exp||0;}}catch(e){}})();
 function gisReady(){return window.google&&google.accounts&&google.accounts.oauth2;}
 function gdLinked(){try{return localStorage.getItem('mst3_gdrive_linked')==='1';}catch(e){return false;}}
+function hasValidToken(){return !!(accessToken&&Date.now()<tokenExp-60000);} // 캐시 토큰 유효? (요청 없이 즉시 백업 가능)
 function getTokenClient(){
   if(tokenClient)return tokenClient;
   if(!gisReady())return null;
@@ -982,7 +983,7 @@ function ensureToken(interactive){
     tc.callback=(resp)=>{
       if(resp&&resp.access_token){
         accessToken=resp.access_token;tokenExp=Date.now()+((resp.expires_in||3600)*1000);
-        try{sessionStorage.setItem('mst3_gd_tok',JSON.stringify({tok:accessToken,exp:tokenExp}));}catch(e){}
+        try{const j=JSON.stringify({tok:accessToken,exp:tokenExp});sessionStorage.setItem('mst3_gd_tok',j);localStorage.setItem('mst3_gd_tok',j);}catch(e){}
         try{localStorage.setItem('mst3_gdrive_linked','1');}catch(e){}
         resolve(accessToken);
       }else if(interactive&&!retried){
@@ -1027,11 +1028,16 @@ function maybeAutoBackup(){
 }
 /* 매매 직후: 무음 토큰 확보되면 즉시 조용히 백업(프롬프트 없음) */
 function backupSoon(){if(S.autoBackup&&gdLinked()&&navigator.onLine){ensureToken(false).then(()=>driveBackup(true)).catch(()=>{});}}
-/* 앱이 백그라운드로 가거나 닫힐 때: 12h 이상 미백업이면 대기 없이 즉시 무음 백업(변경분 유실 방지) */
-function flushBackup(){if(cloudBusy)return;if(!(S.autoBackup&&gdLinked()&&navigator.onLine&&gisReady()))return;
+/* 앱이 백그라운드로 가거나 닫힐 때: 12h 이상 미백업이면 즉시 백업(변경분 유실 방지).
+   단, 유효 캐시 토큰이 있을 때만 — 여기서 토큰 요청(구글 프레임)을 띄우지 않는다(닫히는 순간 깜빡임 방지). */
+function flushBackup(){if(cloudBusy||!hasValidToken())return;if(!(S.autoBackup&&gdLinked()&&navigator.onLine))return;
   if(Date.now()-(S.lastBackupAt||0)<43200000)return;
-  ensureToken(false).then(()=>driveBackup(true)).catch(()=>{});}
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushBackup();else{autoTried=false;maybeAutoBackup();}});
+  driveBackup(true).catch(()=>{});}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'){flushBackup();return;}
+  // 다시 보일 때: 유효 토큰이 있으면 조용히 백업, 없으면 지연 스케줄로 넘겨 열림 순간 깜빡임 방지
+  if(hasValidToken()){autoTried=false;maybeAutoBackup();}else{autoTried=false;scheduleBootBackup();}
+});
 window.addEventListener('pagehide',flushBackup);
 async function driveRestore(){try{const q=await fetch("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='seven_backup.json'",{headers:{Authorization:'Bearer '+accessToken}});const jd=await q.json();
   if(!jd.files||!jd.files[0]){toast('백업 파일 없음');return;}
@@ -1096,13 +1102,19 @@ window.addEventListener('popstate',()=>{if(document.getElementById('chartFull')&
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{});}
 if(navigator.storage&&navigator.storage.persist){navigator.storage.persist().catch(()=>{});} // 저장소 영구화 요청(공간 부족 시 임의 삭제 방지)
 render();
-// 데일리 자동 백업: GIS(구글 스크립트) 준비될 때까지 폴링 후 무음 시도.
-// maybeAutoBackup은 GIS 미준비 시 시도를 소진하지 않으므로, 준비되는 즉시 1회만 실행된다.
-(function bootAutoBackup(n){
-  if(autoTried)return;
-  if(gdLinked()&&gisReady()){maybeAutoBackup();return;}
-  if(n>0)setTimeout(()=>bootAutoBackup(n-1),1200);   // 최대 ~24초 대기(20*1.2s)
-})(20);
+// 데일리 자동 백업: 여는 순간과 겹치면 구글 토큰 프레임이 깜빡이므로,
+// 최초 페인트 뒤 ~4s 지연 + idle + 화면 보일 때만 시도(콜드 스타트 1회). GIS 미준비면 폴링.
+function scheduleBootBackup(){
+  if(document.visibilityState&&document.visibilityState!=='visible')return; // 숨김이면 보일 때 visibilitychange가 처리
+  const idle=window.requestIdleCallback||function(f){return setTimeout(f,1);};
+  let tries=20;
+  setTimeout(()=>idle(function poll(){
+    if(autoTried)return;
+    if(gdLinked()&&gisReady()){maybeAutoBackup();return;}
+    if(--tries>0)setTimeout(()=>idle(poll),1200);   // 최대 ~24초 대기
+  },{timeout:3000}),4000);
+}
+scheduleBootBackup();
 </script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
