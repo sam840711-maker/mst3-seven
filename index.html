@@ -247,7 +247,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.30 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.31 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -529,9 +529,9 @@ function effSleeve(inst,cfg){const ri=cfg.reinvest||0;return cfg.sleeveCapitalKR
 function render(){
   renderTabs();
   const inst=A(), cfg=inst.cfg, p=inst.price;
-  const closes=inst.priceHistory.map(h=>h.close);
+  const closes=(function(){const a=inst.priceHistory.map(h=>h.close);if(p!=null&&(a.length===0||a[a.length-1]!==p))a.push(p);return a;})(); // 20일선용: 현재가가 이미 마지막 점이면 중복 append 안 함(v0.28 이후 부작용 방지)
   const state={openLots:openLots(inst),lastBuyPrice:inst.lastBuyPriceUSD};
-  let sig=p!=null?Engine.signal(state,{price:p,closes:closes.concat([p])},cfg):null;
+  let sig=p!=null?Engine.signal(state,{price:p,closes:closes},cfg):null;
 
   $('heroSym').textContent=inst.name||inst.symbol;
   $('brandTag').textContent=inst.symbol;
@@ -558,7 +558,7 @@ function render(){
     $('heroWhy2').innerHTML=hw2;
     // ===== 상승 전환 판정 알림 (MSTU 전환/공격성 상향 시점) =====
     (function(){
-      const cl=inst.priceHistory.map(h=>h.close).concat(p!=null?[p]:[]);
+      const cl=closes; // 위에서 만든 중복제거 시리즈 재사용(동일 20일선 보장)
       const w=cfg.maWindow;
       if(cl.length<w+6){$('turnAlert').innerHTML='';return;}
       const maS=[];
@@ -764,7 +764,8 @@ $('btnBuy').onclick=()=>{
   ],()=>{
     const p=+$('emPrice').value,sh=+$('emShares').value,kr=+$('emKrw').value;
     const fx=(sh>0&&p>0)?kr/(sh*p):0;
-    const ma=Engine.sma(inst.priceHistory.map(h=>h.close).concat([inst.price]),cfg.maWindow);
+    const _mc=inst.priceHistory.map(h=>h.close);if(inst.price!=null&&(_mc.length===0||_mc[_mc.length-1]!==inst.price))_mc.push(inst.price);
+    const ma=Engine.sma(_mc,cfg.maWindow);
     const down=ma!=null&&inst.price<ma*(1-cfg.trendBand);
     $('emCalc').innerHTML=`적용 환율 ₩${fx.toFixed(1)} · 1주당 ₩${sh>0?Math.round(kr/sh).toLocaleString():'—'}`+
       (down?`<br><span style="color:#e5534b">⚠ 하락 국면 — 전략상 매수 신호 아님</span>`:'');
