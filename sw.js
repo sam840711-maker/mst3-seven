@@ -1,5 +1,5 @@
 /* MST3 세븐스플릿 service worker */
-const CACHE='mst3seven-v33';
+const CACHE='mst3seven-v34';
 const ASSETS=['./','./index.html','./manifest.json',
   './icon-192.png','./icon-512.png','./icon-apple-180.png'];
 self.addEventListener('install',e=>{

@@ -247,7 +247,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.31 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.32 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -543,7 +543,25 @@ function render(){
     $('heroWhy').textContent=sig.reason;
     // 조건 분해 (관망일 때 왜 대기인지)
     let hw2='';
-    if(sig.action==='HOLD'){
+    if(sig.action==='BUY'&&p!=null&&sig.openCount<sig.splits){
+      // 다음 트란셰 실행 계획 — 모달 열기 전에 수량·금액·평단 변화를 미리 보여줌
+      const ec=Object.assign({},cfg,{sleeveCapitalKRW:effSleeve(inst,cfg)});
+      const budget=ec.sleeveCapitalKRW/ec.splits;                    // 트란셰당 원화 예산
+      const shN=Engine.sharesForTranche(ec,p,S.fx);                  // 수수료 반영 이론 수량
+      const sh=Math.round(shN);
+      const estKRW=Math.round(sh*p*S.fx);                            // 정수 주수 기준 실제 결제 추정
+      const nextNo=sig.openCount+1;
+      // 매수 후 평단(달러) — 기존 보유 + 이번 매수
+      const curSh=openLots(inst).reduce((a,t)=>a+(t.shares||0),0);
+      const curAvg=sig.avgUSD;
+      const newAvg=(curSh+sh)>0&&curAvg!=null?((curAvg*curSh)+(p*sh))/(curSh+sh):p;
+      const remain=Math.max(0,ec.sleeveCapitalKRW-(sig.capUsedKRW||0)-estKRW);
+      hw2=`<b>${nextNo}번 트란셰 계획</b> · <b style="color:#22b8a6">${sh}주</b> @ $${p.toFixed(2)}`
+        +` · 약 <b>₩${estKRW.toLocaleString()}</b> <span class="faint">(예산 ₩${Math.round(budget).toLocaleString()} · 환율 ₩${Number(S.fx).toFixed(2)})</span>`
+        +`<br><span class="faint">매수 후 평단 $${curAvg!=null?curAvg.toFixed(2):'—'} → <b>$${newAvg.toFixed(2)}</b>`
+        +` · 익절가 $${(p*(1+cfg.tp)).toFixed(2)} · 남은 여력 ₩${remain.toLocaleString()}</span>`;
+    }
+    else if(sig.action==='HOLD'){
       const trendTxt=sig.downtrend?`<b style="color:#e5534b">✗ 하락 국면</b> (20일선 아래)`:`<b style="color:#22b8a6">✓ 추세 양호</b>`;
       let priceTxt='';
       if(inst.lastBuyPriceUSD!=null){
