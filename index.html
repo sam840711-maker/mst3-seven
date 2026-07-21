@@ -247,7 +247,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.32 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.33 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -756,8 +756,10 @@ const today=()=>new Date().toISOString().slice(0,10);
 const pct=v=>(v>=0?'+':'')+v.toFixed(1)+'%';
 let emState=null;
 function buildFields(defs){
-  $('emFields').innerHTML=defs.map(f=>`<div class="fld"><label>${f.label}</label><input id="${f.id}" inputmode="decimal" value="${f.val}"></div>`).join('');
-  defs.forEach(f=>$(f.id).addEventListener('input',()=>{if(emState)emState.recalc();}));
+  $('emFields').innerHTML=defs.map(f=>f.opts
+    ?`<div class="fld"><label>${f.label}</label><select id="${f.id}">${f.opts.map(o=>`<option value="${o.v}"${String(o.v)===String(f.val)?' selected':''}>${o.t}</option>`).join('')}</select></div>`
+    :`<div class="fld"><label>${f.label}</label><input id="${f.id}" inputmode="decimal" value="${f.val}"></div>`).join('');
+  defs.forEach(f=>$(f.id).addEventListener(f.opts?'change':'input',()=>{if(emState)emState.recalc();}));
 }
 function openModal(title,defs,recalc,onOk){
   $('emTitle').textContent=title;buildFields(defs);emState={recalc,onOk};recalc();
@@ -800,26 +802,48 @@ $('btnBuy').onclick=()=>{
 $('btnSell').onclick=()=>{
   const inst=A(),cfg=inst.cfg;
   if(inst.price==null){toast('먼저 현재가를 적용하세요');return;}
-  const winners=inst.tranches.filter(t=>t.status==='open'&&inst.price>=t.buyPriceUSD*(1+cfg.tp));
-  const targets=winners.length?winners:inst.tranches.filter(t=>t.status==='open');
-  if(!targets.length){toast('익절할 트란셰 없음');return;}
-  const t=targets.sort((a,b)=>b.buyPriceUSD-a.buyPriceUSD)[0];
-  const buyFx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
-  const usdProc=t.shares*inst.price*(1-0.0015);
-  openModal(`익절 기록 · #${t.id}번 (매수 $${t.buyPriceUSD.toFixed(2)})`,[
+  const opens=inst.tranches.filter(t=>t.status==='open');
+  if(!opens.length){toast('익절할 트란셰 없음');return;}
+  const tpOf=t=>t.buyPriceUSD*(1+cfg.tp);
+  const reached=t=>inst.price>=tpOf(t);
+  const winners=opens.filter(reached);
+  // 기본 선택: 도달분이 있으면 그 중 매수가 최고(비싼 재고 우선 정리),
+  // 없으면 '목표에 가장 가까운' 트란셰(=최근·저가). 예전엔 미도달 시 매수가 최고를 골라 손실 매도를 익절로 띄웠음.
+  const defT=winners.length
+    ? winners.slice().sort((a,b)=>b.buyPriceUSD-a.buyPriceUSD)[0]
+    : opens.slice().sort((a,b)=>(inst.price/tpOf(b))-(inst.price/tpOf(a)))[0];
+  const optList=opens.slice().sort((a,b)=>a.id-b.id).map(t=>{
+    const ret=(inst.price/t.buyPriceUSD-1)*100;
+    return {v:t.id,t:`#${t.id} · 매수 $${t.buyPriceUSD.toFixed(2)} · ${ret>=0?'+':''}${ret.toFixed(1)}% · 익절가 $${tpOf(t).toFixed(2)} ${reached(t)?'✓도달':'미달'}`};
+  });
+  const cur=()=>inst.tranches.find(x=>x.id===+$('emTr').value)||defT;
+  let lastId=defT.id;
+  const procOf=t=>t.shares*inst.price*(1-0.0015);
+  openModal(`익절 기록 · ${winners.length?'도달 '+winners.length+'건':'⚠ 도달 없음'}`,[
+    {id:'emTr',label:'트란셰 선택',val:defT.id,opts:optList},
     {id:'emSell',label:'매도가 (USD)',val:Number(inst.price.toFixed(4))},
-    {id:'emUsd',label:'수령 달러 ($) — 실제 매도대금',val:Number(usdProc.toFixed(2))},
+    {id:'emUsd',label:'수령 달러 ($) — 실제 매도대금',val:Number(procOf(defT).toFixed(2))},
   ],()=>{
+    const t=cur();
+    if(t.id!==lastId){lastId=t.id;$('emUsd').value=Number(procOf(t).toFixed(2));} // 트란셰 바뀌면 대금 재계산
+    const buyFx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
     const sp=+$('emSell').value,ud=+$('emUsd').value;
     const assetRet=(sp/t.buyPriceUSD-1);
     const assetPnlKRW=ud*buyFx-t.krwCost;                  // 자산손익(매수환율 기준)
     const provKRW=ud*S.fx-t.krwCost;                        // 현재 환율로 환산한 잠정 원화손익
-    $('emCalc').innerHTML=`자산 ${pct(assetRet*100)} · 매도대금 $${ud.toFixed(2)}`+
+    const hit=sp>=tpOf(t);
+    $('emCalc').innerHTML=
+      (hit?`<span style="color:#22b8a6">✓ 익절 조건 도달 (목표 $${tpOf(t).toFixed(2)})</span>`
+          :`<span style="color:#e5894d">⚠ 익절 조건 미도달 — 목표 $${tpOf(t).toFixed(2)} · 규칙상 매도 아님</span>`)+
+      `<br>자산 ${pct(assetRet*100)} · ${t.shares}주 · 매도대금 $${ud.toFixed(2)}`+
       `<br>자산손익(매수환율) <b style="color:${assetPnlKRW>=0?'#22b8a6':'#e5534b'}">${assetPnlKRW>=0?'+':''}₩${Math.round(assetPnlKRW).toLocaleString()}</b>`+
       `<br><span class="faint">달러는 미환전 잔고로 적립 · 원화손익은 환전 시 확정 (잠정 ₩${Math.round(provKRW).toLocaleString()} @${S.fx})</span>`;
   },()=>{
+    const t=cur();
+    const buyFx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
     const sp=+$('emSell').value,ud=+$('emUsd').value;
     if(!(sp>0&&ud>0)){toast('값을 확인하세요');return false;}
+    if(sp<tpOf(t)&&!confirm(`#${t.id}번은 익절 조건 미도달입니다.\n목표 $${tpOf(t).toFixed(2)} · 매도가 $${sp.toFixed(2)}\n\n그래도 매도로 기록할까요?`))return false;
     const assetPnlKRW=ud*buyFx-t.krwCost;
     t.status='closed';t.sellDate=today();t.sellPriceUSD=sp;t.usdProceeds=ud;t.assetPnlKRW=assetPnlKRW;t.buyFx=buyFx;t.poolKrwAdded=ud*buyFx;
     inst.realizedKRW+=assetPnlKRW;if(cfg.sweep)inst.sweptKRW+=assetPnlKRW;
