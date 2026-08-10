@@ -169,6 +169,9 @@
   .set-fold>summary::before{content:'▸';color:var(--muted);font-size:10px}
   .set-fold[open]>summary::before{content:'▾'}
   .set-fold .set-body{padding:4px 10px 8px}
+  .hist-btn{background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:5px 9px;font-size:11px;font-weight:600;font-family:var(--mono)}
+  .hist-link{width:100%;margin-top:10px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:11px 14px;font-size:13px;font-weight:600;text-align:left;display:flex;align-items:center;gap:6px}
+  .hist-link .faint{margin-left:auto}
   .modal-card .fld label{margin:0 0 4px}
   #emCalc{font-family:var(--mono);font-size:12px;color:var(--muted);margin:8px 0 4px;line-height:1.55}
   .fxstat{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;margin:-4px 0 8px}
@@ -183,6 +186,7 @@
   <header>
     <div class="brand">세븐스플릿 <span class="tag" id="brandTag">멀티</span></div>
     <div style="display:flex;gap:10px;align-items:center;font-family:var(--mono);font-size:10px;color:var(--faint)">
+      <button class="hist-btn" id="btnHeaderHistory" title="완료 기록">📁 기록</button>
       <span style="display:flex;align-items:center;gap:4px"><span class="dot" id="dotProxy" title="시세"></span>시세</span>
       <span style="display:flex;align-items:center;gap:4px"><span class="dot" id="dotBackup" title="백업"></span>백업</span>
     </div>
@@ -255,12 +259,18 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.34 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.35 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
 <!-- settings sheet -->
 <div id="chartFull"><button id="chartFullClose">✕ 닫기</button><div class="rot" id="chartFullRot"></div><div class="cfhint">가로 전체화면 · 탭하면 닫기</div></div>
+<div class="sheet" id="historyView">
+  <div class="sheet-head"><span>완료 기록 · <span id="histSym" style="font-family:var(--mono)">—</span></span>
+    <button id="btnCloseHistory" class="sheet-close">← 뒤로</button></div>
+  <div class="sheet-body" id="histBody"></div>
+</div>
+
 <div class="sheet" id="settingsView">
   <div class="sheet-head"><span>설정 · 백업</span>
     <button id="btnCloseSettings" class="sheet-close">닫기</button></div>
@@ -427,6 +437,87 @@ function assignSets(inst){
   evs.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.type===b.type?0:a.type==='sell'?-1:1)); // 동일자: 매도 먼저(청산 후 재진입=새 세트)
   let open=0,cycle=0,noInCycle=0;
   evs.forEach(e=>{if(e.type==='buy'){if(open===0){cycle++;noInCycle=0;}noInCycle++;e.t.cycle=cycle;e.t.no=noInCycle;open++;}else{open--;}});
+}
+// 세트 요약(실현손익·미환전·기간·트란셰수)
+function setSummary(arr){
+  const real=arr.reduce((a,t)=>a+(t.status==='closed'?((t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0)):0),0);
+  const proc=arr.reduce((a,t)=>a+(t.usdProceeds||0),0);
+  const cost=arr.reduce((a,t)=>a+(t.krwCost||0),0);
+  const dates=arr.map(t=>t.buyDate).concat(arr.filter(t=>t.sellDate).map(t=>t.sellDate)).filter(Boolean).sort();
+  const period=dates.length?(dates[0]+(dates[dates.length-1]!==dates[0]?'~'+dates[dates.length-1]:'')):'';
+  return {real,proc,cost,period,n:arr.length,ret:cost>0?real/cost*100:0};
+}
+// 트란셰 행 HTML (열림/닫힘 공통) — 메인·완료기록 화면 공용
+function trxRowHTML(inst,cfg,t){
+  const st=t.status==='open'?'open':'closed';
+  const bfx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
+  const usd=t.shares*t.buyPriceUSD;
+  let detail,pnlTop;
+  if(t.status==='open'){
+    const usdPnl=(inst.price-t.buyPriceUSD)*t.shares;
+    const assetK=usdPnl*bfx;
+    const fxK=t.shares*inst.price*(S.fx-bfx);
+    const totK=assetK+fxK;
+    const pct=t.krwCost>0?totK/t.krwCost*100:0;
+    const col=totK>=0?'#22b8a6':'#e5534b';
+    pnlTop=`<b style="color:${col}">${totK>=0?'+':''}${won(totK)} (${totK>=0?'+':''}${pct.toFixed(1)}%)</b>`;
+    detail=`체결 $${t.buyPriceUSD.toFixed(2)} · ${Math.round(t.shares)}주 · 총 $${usd.toFixed(0)} · 매입 ${won(t.krwCost)} · 환율 ₩${bfx.toFixed(0)}`
+      +`<br>달러손익 <b style="color:${usdPnl>=0?'#22b8a6':'#e5534b'}">${usdPnl>=0?'+':''}$${usdPnl.toFixed(0)}</b>`
+      +` · 자산 <b style="color:${assetK>=0?'#22b8a6':'#e5534b'}">${assetK>=0?'+':''}${won(assetK)}</b>`
+      +` · 환차 <b style="color:${fxK>=0?'#22b8a6':'#e5534b'}">${fxK>=0?'+':''}${won(fxK)}</b>`
+      +(()=>{const tpP=t.buyPriceUSD*(1+cfg.tp);const gap=(tpP/inst.price-1)*100;
+        return `<br>익절가 <b style="color:#e0a83a">$${tpP.toFixed(2)}</b> `
+          +(inst.price>=tpP?`<b style="color:#22b8a6">✓ 도달 (익절 대상)</b>`:`<span class="faint">도달까지 +${gap.toFixed(1)}%</span>`);})();
+  }else{
+    const assetK=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
+    const usdPnl=(t.sellPriceUSD!=null)?(t.sellPriceUSD-t.buyPriceUSD)*t.shares:null;
+    const pct=t.krwCost>0?assetK/t.krwCost*100:0;
+    const col=assetK>=0?'#22b8a6':'#e5534b';
+    pnlTop=`<b style="color:${col}">${assetK>=0?'+':''}${won(assetK)} (${assetK>=0?'+':''}${pct.toFixed(1)}%)</b>`;
+    detail=`매도 $${(t.sellPriceUSD||0).toFixed(2)} · 실현 자산손익 ${assetK>=0?'+':''}${won(assetK)}`
+      +(usdPnl!=null?` · 달러손익 ${usdPnl>=0?'+':''}$${usdPnl.toFixed(0)}`:'')
+      +(t.usdProceeds?` · 수령 $${t.usdProceeds.toFixed(0)}`:'')
+      +`<br><span class="faint">※ 환차는 환전 기록 시 확정</span>`;
+  }
+  return `<div class="trx"${t.status==='open'?` data-edit="${t.id}"`:''}>`+
+    `<div class="trx-top"><span>#${t.no||t.id} <span class="st ${st}">${st==='open'?'보유':'익절'}</span> <span class="faint">${t.buyDate||''}</span>${t.status==='open'?' <span class="faint">✎</span>':''}</span>`+
+    `<span style="display:flex;gap:8px;align-items:center">${pnlTop}<button class="delx" data-del="${t.id}">×</button></span></div>`+
+    `<div class="trx-detail">${detail}</div></div>`;
+}
+// 완료 세트 목록(전부 닫힌 회차)
+function completedCycles(inst){
+  const curCyc=curCycleOf(inst);
+  const cycles={};inst.tranches.forEach(t=>{(cycles[t.cycle||1]=cycles[t.cycle||1]||[]).push(t);});
+  return Object.keys(cycles).map(Number).filter(c=>c!==curCyc&&cycles[c].every(t=>t.status==='closed'))
+    .sort((a,b)=>b-a).map(c=>({cycle:c,arr:cycles[c].slice().sort((a,b)=>(a.no||0)-(b.no||0))}));
+}
+// 완료 기록 화면 렌더
+function renderHistory(){
+  const inst=A(),cfg=inst.cfg;
+  $('histSym').textContent=inst.symbol||'';
+  const done=completedCycles(inst);
+  const el=$('histBody');
+  if(!done.length){el.innerHTML='<div class="card"><span class="muted">아직 완료된 세트가 없습니다. 한 세트를 전량 익절하면 여기에 기록돼요.</span></div>';return;}
+  const sums=done.map(d=>setSummary(d.arr));
+  const totReal=sums.reduce((a,s)=>a+s.real,0);
+  const totProc=sums.reduce((a,s)=>a+s.proc,0);
+  const wins=sums.filter(s=>s.real>0).length;
+  const winRate=Math.round(wins/sums.length*100);
+  const avgRet=sums.reduce((a,s)=>a+s.ret,0)/sums.length;
+  el.innerHTML=
+    `<div class="card">`+
+      `<div class="row"><span class="k">완료 세트</span><b>${done.length}개 <span class="faint">· 승률 ${winRate}% (${wins}/${sums.length})</span></b></div>`+
+      `<div class="row"><span class="k">누적 실현 자산손익</span><b style="color:${totReal>=0?'#22b8a6':'#e5534b'}">${totReal>=0?'+':''}${won(totReal)}</b></div>`+
+      `<div class="row"><span class="k">평균 세트 수익률</span><b style="color:${avgRet>=0?'#22b8a6':'#e5534b'}">${avgRet>=0?'+':''}${avgRet.toFixed(1)}%</b></div>`+
+      (totProc>0.005?`<div class="row"><span class="k">누적 미환전</span><b>+$${totProc.toFixed(0)}</b></div>`:'')+
+    `</div>`+
+    done.map((d,i)=>{const s=sums[i];
+      return `<details class="set-fold"><summary>`
+        +`<b>${d.cycle}회차</b> <span class="faint">${s.period} · ${s.n}트란셰</span>`
+        +` <span style="margin-left:auto;color:${s.real>=0?'#22b8a6':'#e5534b'}">${s.real>=0?'+':''}${won(s.real)} <span class="faint">(${s.ret>=0?'+':''}${s.ret.toFixed(1)}%)</span></span>`
+        +(s.proc>0.005?` <span class="faint">· $${s.proc.toFixed(0)}</span>`:'')
+        +`</summary><div class="set-body">${d.arr.map(t=>trxRowHTML(inst,cfg,t)).reverse().join('')}</div></details>`;
+    }).join('');
 }
 
 /* ===== SVG 차트 + 기준선 (상세) ===== */
@@ -693,79 +784,30 @@ function render(){
   } else $('holdSum').innerHTML='';
 
   const tl=$('trlist');
-  // 한 트란셰 행 HTML (열림/닫힘 공통)
-  const trxRow=(t)=>{
-    const st=t.status==='open'?'open':'closed';
-    const bfx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
-    const usd=t.shares*t.buyPriceUSD;
-    let detail,pnlTop;
-    if(t.status==='open'){
-      const usdPnl=(inst.price-t.buyPriceUSD)*t.shares;
-      const assetK=usdPnl*bfx;
-      const fxK=t.shares*inst.price*(S.fx-bfx);
-      const totK=assetK+fxK;
-      const pct=t.krwCost>0?totK/t.krwCost*100:0;
-      const col=totK>=0?'#22b8a6':'#e5534b';
-      pnlTop=`<b style="color:${col}">${totK>=0?'+':''}${won(totK)} (${totK>=0?'+':''}${pct.toFixed(1)}%)</b>`;
-      detail=`체결 $${t.buyPriceUSD.toFixed(2)} · ${Math.round(t.shares)}주 · 총 $${usd.toFixed(0)} · 매입 ${won(t.krwCost)} · 환율 ₩${bfx.toFixed(0)}`
-        +`<br>달러손익 <b style="color:${usdPnl>=0?'#22b8a6':'#e5534b'}">${usdPnl>=0?'+':''}$${usdPnl.toFixed(0)}</b>`
-        +` · 자산 <b style="color:${assetK>=0?'#22b8a6':'#e5534b'}">${assetK>=0?'+':''}${won(assetK)}</b>`
-        +` · 환차 <b style="color:${fxK>=0?'#22b8a6':'#e5534b'}">${fxK>=0?'+':''}${won(fxK)}</b>`
-        +(()=>{const tpP=t.buyPriceUSD*(1+cfg.tp);const gap=(tpP/inst.price-1)*100;
-          return `<br>익절가 <b style="color:#e0a83a">$${tpP.toFixed(2)}</b> `
-            +(inst.price>=tpP?`<b style="color:#22b8a6">✓ 도달 (익절 대상)</b>`:`<span class="faint">도달까지 +${gap.toFixed(1)}%</span>`);})();
-    }else{
-      const assetK=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
-      const usdPnl=(t.sellPriceUSD!=null)?(t.sellPriceUSD-t.buyPriceUSD)*t.shares:null;
-      const pct=t.krwCost>0?assetK/t.krwCost*100:0;
-      const col=assetK>=0?'#22b8a6':'#e5534b';
-      pnlTop=`<b style="color:${col}">${assetK>=0?'+':''}${won(assetK)} (${assetK>=0?'+':''}${pct.toFixed(1)}%)</b>`;
-      detail=`매도 $${(t.sellPriceUSD||0).toFixed(2)} · 실현 자산손익 ${assetK>=0?'+':''}${won(assetK)}`
-        +(usdPnl!=null?` · 달러손익 ${usdPnl>=0?'+':''}$${usdPnl.toFixed(0)}`:'')
-        +(t.usdProceeds?` · 수령 $${t.usdProceeds.toFixed(0)}`:'')
-        +`<br><span class="faint">※ 환차는 환전 기록 시 확정</span>`;
-    }
-    return `<div class="trx"${t.status==='open'?` data-edit="${t.id}"`:''}>`+
-      `<div class="trx-top"><span>#${t.no||t.id} <span class="st ${st}">${st==='open'?'보유':'익절'}</span> <span class="faint">${t.buyDate||''}</span>${t.status==='open'?' <span class="faint">✎</span>':''}</span>`+
-      `<span style="display:flex;gap:8px;align-items:center">${pnlTop}<button class="delx" data-del="${t.id}">×</button></span></div>`+
-      `<div class="trx-detail">${detail}</div></div>`;
-  };
+  const trxRow=(t)=>trxRowHTML(inst,cfg,t);
   if(!inst.tranches.length){tl.innerHTML='<span class="muted">아직 매수한 트란셰가 없습니다.</span>';}
   else{
     const curCyc=curCycleOf(inst);
-    // 세트별 그룹
     const cycles={};inst.tranches.forEach(t=>{(cycles[t.cycle||1]=cycles[t.cycle||1]||[]).push(t);});
-    const setSummary=(arr)=>{
-      const real=arr.reduce((a,t)=>a+(t.status==='closed'?((t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0)):0),0);
-      const proc=arr.reduce((a,t)=>a+(t.usdProceeds||0),0);
-      const dates=arr.map(t=>t.buyDate).concat(arr.filter(t=>t.sellDate).map(t=>t.sellDate)).filter(Boolean).sort();
-      const period=dates.length?(dates[0]+(dates[dates.length-1]!==dates[0]?'~'+dates[dates.length-1]:'')):'';
-      return {real,proc,period,n:arr.length};
-    };
     let html='';
-    // 진행 중 세트
+    // 진행 중 세트만 메인에 표시
     if(curCyc!=null){
       const arr=cycles[curCyc].slice().sort((a,b)=>(a.no||0)-(b.no||0));
       const s=setSummary(arr);
       const openN=arr.filter(t=>t.status==='open').length;
       html+=`<div class="set-hd">진행 중 · <b>${curCyc}회차</b> <span class="faint">· 열림 ${openN}/${cfg.splits}${s.real!==0?` · 세트 실현 ${s.real>=0?'+':''}${won(s.real)}`:''}</span></div>`;
       html+=arr.map(trxRow).reverse().join('');
+    } else {
+      html+=`<div class="set-hd">진행 중 세트 없음 <span class="faint">· 매수하면 새 회차 시작</span></div>`;
     }
-    // 완료된 세트(전부 닫힘) — 접이식, 최근 회차 위로
-    const doneCycs=Object.keys(cycles).map(Number).filter(c=>c!==curCyc&&cycles[c].every(t=>t.status==='closed')).sort((a,b)=>b-a);
-    if(doneCycs.length){
-      html+=`<div class="set-hd done">완료된 세트 <span class="faint">· ${doneCycs.length}개</span></div>`;
-      doneCycs.forEach(c=>{
-        const arr=cycles[c].slice().sort((a,b)=>(a.no||0)-(b.no||0));
-        const s=setSummary(arr);
-        html+=`<details class="set-fold"><summary>`
-          +`<b>${c}회차</b> <span class="faint">${s.period} · ${s.n}트란셰</span>`
-          +` <span style="margin-left:auto;color:${s.real>=0?'#22b8a6':'#e5534b'}">${s.real>=0?'+':''}${won(s.real)}</span>`
-          +(s.proc>0.005?` <span class="faint">· 미환전 +$${s.proc.toFixed(0)}</span>`:'')
-          +`</summary><div class="set-body">${arr.map(trxRow).reverse().join('')}</div></details>`;
-      });
+    // 완료 세트는 별도 화면으로 — 링크만
+    const done=completedCycles(inst);
+    if(done.length){
+      const tot=done.reduce((a,d)=>a+setSummary(d.arr).real,0);
+      html+=`<button class="hist-link" id="btnOpenHistory">📁 완료된 세트 ${done.length}개 · 누적 ${tot>=0?'+':''}${won(tot)} <span class="faint">›</span></button>`;
     }
     tl.innerHTML=html;
+    if($('btnOpenHistory'))$('btnOpenHistory').onclick=openHistory;
   }
 
   $('priceTitle').textContent=(inst.symbol||'')+' 현재가';
@@ -961,7 +1003,8 @@ $('trlist').addEventListener('click',(e)=>{
     inst.tranches=inst.tranches.filter(x=>x.id!==id);
     const open=inst.tranches.filter(x=>x.status==='open');
     inst.lastBuyPriceUSD=open.length?open[open.length-1].buyPriceUSD:null;
-    save();render();toast(`#${id}번 삭제`);return;backupSoon();
+    save();render();if($('historyView').classList.contains('show'))renderHistory();
+    toast(`${t.cycle||1}회차 #${t.no||id} 삭제`);backupSoon();return;
   }
   const ed=e.target.closest('[data-edit]');
   if(ed)openEditModal(inst,parseInt(ed.dataset.edit));
@@ -1159,16 +1202,20 @@ $('btnRestore').onclick=()=>ensureToken(true).then(()=>driveRestore()).catch(e=>
 /* ===== 설정 시트 ===== */
 function openSettings(){render();$('settingsView').classList.add('show');try{history.pushState({sheet:1},'');}catch(e){}}
 function closeSettings(){$('settingsView').classList.remove('show');}
+function openHistory(){renderHistory();$('historyView').classList.add('show');try{history.pushState({sheet:1},'');}catch(e){}}
+function closeHistory(){$('historyView').classList.remove('show');}
 $('btnOpenSettings').onclick=openSettings;
+$('btnHeaderHistory').onclick=openHistory;
+$('btnCloseHistory').onclick=()=>{closeHistory();if(history.state&&history.state.sheet){try{history.back();}catch(e){}}};
 $('btnCloseSettings').onclick=()=>{closeSettings();if(history.state&&history.state.sheet){try{history.back();}catch(e){}}};
-window.addEventListener('popstate',()=>{if($('settingsView').classList.contains('show'))closeSettings();});
+window.addEventListener('popstate',()=>{if($('settingsView').classList.contains('show'))closeSettings();if($('historyView').classList.contains('show'))closeHistory();});
 
 /* ===== 당겨서 새로고침 (PTR) ===== */
 (function(){
   let startY=null,dist=0,active=false;const THRESH=68,MAXP=130;const ptr=$('ptr');
   function reset(){startY=null;dist=0;active=false;ptr.style.opacity='0';ptr.style.transform='translate(-50%,-44px)';ptr.classList.remove('spin');ptr.textContent='↓ 당겨서 새로고침';}
   window.addEventListener('touchstart',e=>{
-    if($('settingsView').classList.contains('show')){startY=null;return;}
+    if($('settingsView').classList.contains('show')||$('historyView').classList.contains('show')){startY=null;return;}
     if(window.scrollY<=0&&e.touches.length===1){startY=e.touches[0].clientY;dist=0;active=false;}else startY=null;
   },{passive:true});
   window.addEventListener('touchmove',e=>{
