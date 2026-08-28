@@ -260,7 +260,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.36 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.37 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -1032,7 +1032,7 @@ function openEditModal(inst,id){
 }
 
 /* ===== 프록시 + 시세 + 환율 ===== */
-const PUBLIC_PROXIES=['https://corsproxy.io/?url=','https://api.allorigins.win/raw?url=','https://api.codetabs.com/v1/proxy/?quest='];
+const PUBLIC_PROXIES=['https://api.allorigins.win/raw?url=','https://api.codetabs.com/v1/proxy/?quest='];
 let _lastGoodProxy=null;
 function getProxies(){let list=PUBLIC_PROXIES.slice();const c=(S.proxy||'').trim();
   if(c){let u=c;if(!/[?&](url|quest)=$/.test(u))u+=(u.includes('?')?'&':'?')+'url=';list=[u,...list];}
