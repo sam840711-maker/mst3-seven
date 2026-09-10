@@ -260,7 +260,7 @@
   <button class="settings-open" id="btnOpenSettings">⚙&nbsp;&nbsp;설정 · 백업</button>
 
   <div class="faint" style="text-align:center;font-size:11px;margin-top:16px">
-    v0.42 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
+    v0.43 · sibling of SH Portfolio · 투자 조언 아님, 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -447,9 +447,12 @@ function openLots(inst){return inst.tranches.filter(t=>t.status==='open').map(t=
 function curCycleOf(inst){const o=inst.tranches.filter(t=>t.status==='open');return o.length?(o[0].cycle||1):null;}
 function nextCycleNo(inst){const o=inst.tranches.filter(t=>t.status==='open');
   return o.length?(o[0].cycle||1):(Math.max(0,...inst.tranches.map(t=>t.cycle||0))+1);}
-function nextTrancheNo(inst){const o=inst.tranches.filter(t=>t.status==='open');
-  if(!o.length)return 1; const c=o[0].cycle||1;
-  return Math.max(0,...inst.tranches.filter(t=>t.cycle===c).map(t=>t.no||0))+1;}
+// 표시 번호 = 사다리 칸 = 열린 트란셰의 매수순 위치. 익절되면 남은 것들이 1..N으로 다시 정렬됨.
+function nextTrancheNo(inst){return inst.tranches.filter(t=>t.status==='open').length+1;}
+function ladderNoOf(inst,t){
+  const o=inst.tranches.filter(x=>x.status==='open').slice()
+    .sort((a,b)=>(a.buyDate||'')<(b.buyDate||'')?-1:(a.buyDate||'')>(b.buyDate||'')?1:(a.id-b.id));
+  const i=o.findIndex(x=>x.id===t.id); return i>=0?i+1:null;}
 // 기존 데이터에 cycle/no 소급 부여 — buy/sell 이벤트를 날짜순 재생, 열린수 0에서 매수 시 새 세트 시작
 function assignSets(inst){
   const ts=inst.tranches; if(!ts.length)return;
@@ -471,7 +474,7 @@ function setSummary(arr){
   return {real,proc,cost,period,n:arr.length,ret:cost>0?real/cost*100:0};
 }
 // 트란셰 행 HTML (열림/닫힘 공통) — 메인·완료기록 화면 공용
-function trxRowHTML(inst,cfg,t){
+function trxRowHTML(inst,cfg,t,dispNo){
   const st=t.status==='open'?'open':'closed';
   const bfx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
   const usd=t.shares*t.buyPriceUSD;
@@ -502,8 +505,11 @@ function trxRowHTML(inst,cfg,t){
       +(t.usdProceeds?` · 수령 $${t.usdProceeds.toFixed(0)}`:'')
       +`<br><span class="faint">※ 환차는 환전 기록 시 확정</span>`;
   }
+  const lbl=(dispNo===null||dispNo===undefined&&t.status==='closed')
+    ? `<span class="faint">${t.sellDate||t.buyDate||''} 매도</span>`
+    : `#${dispNo!=null?dispNo:(t.no||t.id)}`;
   return `<div class="trx"${t.status==='open'?` data-edit="${t.id}"`:''}>`+
-    `<div class="trx-top"><span>#${t.no||t.id} <span class="st ${st}">${st==='open'?'보유':'익절'}</span> <span class="faint">${t.buyDate||''}</span>${t.status==='open'?' <span class="faint">✎</span>':''}</span>`+
+    `<div class="trx-top"><span>${lbl} <span class="st ${st}">${st==='open'?'보유':'익절'}</span> <span class="faint">${t.status==='open'?(t.buyDate||''):''}</span>${t.status==='open'?' <span class="faint">✎</span>':''}</span>`+
     `<span style="display:flex;gap:8px;align-items:center">${pnlTop}<button class="delx" data-del="${t.id}">×</button></span></div>`+
     `<div class="trx-detail">${detail}</div></div>`;
 }
@@ -539,7 +545,7 @@ function renderHistory(){
         +`<b>${d.cycle}회차</b> <span class="faint">${s.period} · ${s.n}트란셰</span>`
         +` <span style="margin-left:auto;color:${s.real>=0?'#22b8a6':'#e5534b'}">${s.real>=0?'+':''}${won(s.real)} <span class="faint">(${s.ret>=0?'+':''}${s.ret.toFixed(1)}%)</span></span>`
         +(s.proc>0.005?` <span class="faint">· $${s.proc.toFixed(0)}</span>`:'')
-        +`</summary><div class="set-body">${d.arr.map(t=>trxRowHTML(inst,cfg,t)).reverse().join('')}</div></details>`;
+        +`</summary><div class="set-body">${d.arr.map(t=>trxRowHTML(inst,cfg,t,null)).reverse().join('')}</div></details>`;
     }).join('');
 }
 
@@ -755,11 +761,12 @@ function render(){
 
   // ladder
   const lad=$('ladder');lad.innerHTML='';
-  const opens=inst.tranches.filter(t=>t.status==='open');
+  const opens=inst.tranches.filter(t=>t.status==='open').slice()
+    .sort((a,b)=>(a.buyDate||'')<(b.buyDate||'')?-1:(a.buyDate||'')>(b.buyDate||'')?1:(a.id-b.id));
   for(let i=0;i<cfg.splits;i++){const t=opens[i];const d=document.createElement('div');d.className='slot';
     if(t){const win=p!=null&&p>=t.buyPriceUSD*(1+cfg.tp);d.className='slot open'+(win?' win':'');
       const pl=p!=null?((p/t.buyPriceUSD-1)*100):0;
-      d.innerHTML=`<div class="fill"></div><div class="n">${t.no||t.id}</div><div class="pl" style="color:${pl>=0?'var(--buy)':'var(--danger)'}">${pl>=0?'+':''}${pl.toFixed(0)}%</div>`;
+      d.innerHTML=`<div class="fill"></div><div class="n">${i+1}</div><div class="pl" style="color:${pl>=0?'var(--buy)':'var(--danger)'}">${pl>=0?'+':''}${pl.toFixed(0)}%</div>`;
     }else d.innerHTML=`<div class="n">${i+1}</div>`;
     lad.appendChild(d);}
 
@@ -818,8 +825,18 @@ function render(){
       const arr=cycles[curCyc].slice().sort((a,b)=>(a.no||0)-(b.no||0));
       const s=setSummary(arr);
       const openN=arr.filter(t=>t.status==='open').length;
+      const opens=arr.filter(t=>t.status==='open').slice().sort((a,b)=>(a.buyDate||'')<(b.buyDate||'')?-1:(a.buyDate||'')>(b.buyDate||'')?1:(a.id-b.id));
+      const closed=arr.filter(t=>t.status==='closed');
+      const ladderNo=new Map();opens.forEach((t,i)=>ladderNo.set(t.id,i+1));   // 열린 것만 매수순 1..N (사다리 칸과 일치)
       html+=`<div class="set-hd">진행 중 · <b>${curCyc}회차</b> <span class="faint">· 열림 ${openN}/${cfg.splits}${s.real!==0?` · 세트 실현 ${s.real>=0?'+':''}${won(s.real)}`:''}</span></div>`;
-      html+=arr.map(trxRow).reverse().join('');
+      html+=opens.map(t=>trxRowHTML(inst,cfg,t,ladderNo.get(t.id))).reverse().join('');
+      if(closed.length){   // 익절분은 번호 없이 한 줄로 접기
+        const cs=setSummary(closed);
+        html+=`<details class="set-fold"><summary><b>익절 ${closed.length}건</b>`
+          +` <span style="margin-left:auto;color:${cs.real>=0?'#22b8a6':'#e5534b'}">${cs.real>=0?'+':''}${won(cs.real)}</span>`
+          +(cs.proc>0.005?` <span class="faint">· $${cs.proc.toFixed(0)}</span>`:'')
+          +`</summary><div class="set-body">${closed.slice().sort((a,b)=>(a.sellDate||'')<(b.sellDate||'')?-1:1).map(t=>trxRowHTML(inst,cfg,t,null)).reverse().join('')}</div></details>`;
+      }
     } else {
       html+=`<div class="set-hd">진행 중 세트 없음 <span class="faint">· 매수하면 새 회차 시작</span></div>`;
     }
@@ -947,7 +964,7 @@ $('btnSell').onclick=()=>{
     : opens.slice().sort((a,b)=>(inst.price/tpOf(b))-(inst.price/tpOf(a)))[0];
   const optList=opens.slice().sort((a,b)=>a.id-b.id).map(t=>{
     const ret=(inst.price/t.buyPriceUSD-1)*100;
-    return {v:t.id,t:`#${t.no||t.id} · 매수 $${t.buyPriceUSD.toFixed(2)} · ${ret>=0?'+':''}${ret.toFixed(1)}% · 익절가 $${tpOf(t).toFixed(2)} ${reached(t)?'✓도달':'미달'}`};
+    return {v:t.id,t:`#${ladderNoOf(inst,t)||'-'} · 매수 $${t.buyPriceUSD.toFixed(2)} · ${ret>=0?'+':''}${ret.toFixed(1)}% · 익절가 $${tpOf(t).toFixed(2)} ${reached(t)?'✓도달':'미달'}`};
   });
   const cur=()=>inst.tranches.find(x=>x.id===+$('emTr').value)||defT;
   let lastId=defT.id;
@@ -976,13 +993,13 @@ $('btnSell').onclick=()=>{
     const buyFx=t.buyFx||(t.krwCost/(t.shares*t.buyPriceUSD));
     const sp=+$('emSell').value,ud=+$('emUsd').value;
     if(!(sp>0&&ud>0)){toast('값을 확인하세요');return false;}
-    if(sp<tpOf(t)&&!confirm(`#${t.no||t.id}번은 익절 조건 미도달입니다.\n목표 $${tpOf(t).toFixed(2)} · 매도가 $${sp.toFixed(2)}\n\n그래도 매도로 기록할까요?`))return false;
+    if(sp<tpOf(t)&&!confirm(`#${ladderNoOf(inst,t)||'-'}번은 익절 조건 미도달입니다.\n목표 $${tpOf(t).toFixed(2)} · 매도가 $${sp.toFixed(2)}\n\n그래도 매도로 기록할까요?`))return false;
     const assetPnlKRW=ud*buyFx-t.krwCost;
     t.status='closed';t.sellDate=today();t.sellPriceUSD=sp;t.usdProceeds=ud;t.assetPnlKRW=assetPnlKRW;t.buyFx=buyFx;t.poolKrwAdded=ud*buyFx;
     inst.realizedKRW+=assetPnlKRW;if(cfg.sweep)inst.sweptKRW+=assetPnlKRW;
     inst.usdPool=(inst.usdPool||0)+ud;inst.usdPoolKrwCost=(inst.usdPoolKrwCost||0)+ud*buyFx;
     const so=inst.tranches.filter(x=>x.status==='open');inst.lastBuyPriceUSD=so.length?so[so.length-1].buyPriceUSD:null;
-    save();render();toast(`#${t.no||t.id}번 익절 · 미환전 +$${ud.toFixed(2)}`);backupSoon();
+    save();render();toast(`익절 완료 · 미환전 +$${ud.toFixed(2)}`);backupSoon();
   });
 };
 
@@ -1017,7 +1034,7 @@ $('trlist').addEventListener('click',(e)=>{
   const del=e.target.closest('[data-del]');
   if(del){
     const id=parseInt(del.dataset.del);const t=inst.tranches.find(x=>x.id===id);if(!t)return;
-    if(!confirm(`${t.cycle||1}회차 #${t.no||id} 트란셰 기록을 삭제할까요?`+(t.status==='closed'?'\n(자산 실현익·미환전 잔고에서도 되돌립니다. 이미 환전한 환차는 유지)':'')))return;
+    if(!confirm(`${t.status==='open'?('#'+(ladderNoOf(inst,t)||'-')+' 보유'):((t.sellDate||'')+' 익절')} 트란셰 기록을 삭제할까요?`+(t.status==='closed'?'\n(자산 실현익·미환전 잔고에서도 되돌립니다. 이미 환전한 환차는 유지)':'')))return;
     if(t.status==='closed'){
       const ap=(t.assetPnlKRW!=null)?t.assetPnlKRW:(t.realizedKRW||0);
       inst.realizedKRW-=ap;if(inst.cfg.sweep)inst.sweptKRW-=ap;
@@ -1028,7 +1045,7 @@ $('trlist').addEventListener('click',(e)=>{
     const open=inst.tranches.filter(x=>x.status==='open');
     inst.lastBuyPriceUSD=open.length?open[open.length-1].buyPriceUSD:null;
     save();render();if($('historyView').classList.contains('show'))renderHistory();
-    toast(`${t.cycle||1}회차 #${t.no||id} 삭제`);backupSoon();return;
+    toast('트란셰 기록 삭제');backupSoon();return;
   }
   const ed=e.target.closest('[data-edit]');
   if(ed)openEditModal(inst,parseInt(ed.dataset.edit));
