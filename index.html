@@ -174,13 +174,32 @@
     <div class="mini" id="rmAssume" style="margin-top:6px"></div>
   </div>
 
-  <!-- 적립 -->
+  <!-- 자금 흐름 -->
   <div class="card">
-    <h3>월 적립</h3>
-    <div class="row"><span class="k">이번 달 적립</span><b id="dcaThis">—</b></div>
-    <div class="row"><span class="k">누적 적립</span><b id="dcaTotal">—</b></div>
-    <button id="btnDca" style="width:100%;margin-top:9px">적립 기록</button>
-    <div class="mini" id="dcaNote" style="margin-top:8px"></div>
+    <h3>자금 흐름</h3>
+    <div class="row"><span class="k">총 투입 원금</span><b id="cfIn">—</b></div>
+    <div class="row"><span class="k">현재 총자산 <span class="faint">(세후)</span></span><b id="cfNow">—</b></div>
+    <div class="row" style="border-top:1px solid var(--line);margin-top:6px;padding-top:9px">
+      <span class="k">실제 수익</span><b id="cfPnl">—</b></div>
+    <div class="row"><span class="k">이번 달 적립</span><b id="cfThis">—</b></div>
+    <div class="grid2" style="margin-top:10px">
+      <button class="primary" id="btnIn2">입금</button>
+      <button id="btnOut2">출금</button>
+    </div>
+    <button class="ghost" id="btnLedger" style="width:100%;margin-top:8px;font-size:13px">📁 입출금 이력</button>
+    <div class="mini" id="cfNote" style="margin-top:8px"></div>
+  </div>
+
+  <!-- 세금 -->
+  <div class="card">
+    <h3>세금 (해외주식 양도세)</h3>
+    <div class="row"><span class="k"><span id="taxYear">—</span>년 실현손익</span><b id="taxReal">—</b></div>
+    <div class="row"><span class="k">이월 손실 반영</span><b id="taxCarry">—</b></div>
+    <div class="row"><span class="k">과세표준 <span class="faint">(공제 250만)</span></span><b id="taxBase">—</b></div>
+    <div class="row" style="border-top:1px solid var(--line);margin-top:6px;padding-top:9px">
+      <span class="k">예상 세액 <span class="faint">(22%)</span></span><b id="taxDue">—</b></div>
+    <div class="row"><span class="k">세후 자산</span><b id="taxNet">—</b></div>
+    <div class="mini" id="taxNote" style="margin-top:8px"></div>
   </div>
 
   <!-- 버퍼 (Phase 3) -->
@@ -198,7 +217,7 @@
 
   <button class="ghost" style="width:100%;margin-top:4px" id="btnSettings">⚙ 설정 · 백업</button>
   <div class="mini" style="text-align:center;margin-top:14px;line-height:1.6">
-    v1.04 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
+    v1.08 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -248,6 +267,21 @@
       </div>
       <div class="note">가정 연수익률은 예상 도달 시점 계산에만 씁니다. 보수적으로 잡으세요(백테스트 CAGR보다 낮게).</div>
       <div class="row" style="margin-top:6px"><button id="btnSaveRm" style="width:100%">로드맵 저장</button></div>
+    </div>
+
+    <div class="card">
+      <h3>세금 설정</h3>
+      <div class="grid2">
+        <div><label>세율 %</label><input id="cfgTaxRate" inputmode="decimal"></div>
+        <div><label>기본공제 (원)</label><input id="cfgTaxDed" inputmode="numeric"></div>
+      </div>
+      <div style="margin-top:9px"><label>차감할 기존 손실 (원)</label><input id="cfgCarry" inputmode="numeric" placeholder="예: MST3 정리 손실"></div>
+      <div class="row" style="margin-top:9px">
+        <label style="display:flex;align-items:center;gap:8px;margin:0;font-size:13px;color:var(--ink)">
+          <input type="checkbox" id="chkReserve" style="width:auto"> 총자산에서 예상 세액 차감</label>
+      </div>
+      <div class="note">해외주식 양도세는 <b>연간 실현손익 합산 → 250만 공제 → 22%</b>이며 다음 해 5월에 신고합니다. 같은 해 실현 손실은 이익과 통산되니, <b>MST3 정리 손실을 여기 입력</b>하면 예상 세액에 반영됩니다. 실제 신고는 세무사 확인 필요.</div>
+      <div class="row" style="margin-top:6px"><button id="btnSaveTax" style="width:100%">세금 설정 저장</button></div>
     </div>
 
     <div class="card">
@@ -332,7 +366,7 @@ function defSym(id,symbol,name,cfg){return{id,symbol,name,
   cfg:Object.assign({},Engine.DEFAULT_CFG,cfg||{}),
   price:null,priceHistory:[],pos:null,trades:[],dca:[]};}
 function blank(){return{version:1,fx:1380,proxy:'',activeId:'ibit',chartRange:'6M',
-  phase:1,cashKRW:0,roadmap:{t1:40000000,t2:60000000,dcaMonthly:500000,cagr:20,wdYear:6000000,extCash:0},
+  phase:1,cashKRW:0,ledger:[],tax:{rate:22,deduct:2500000,carryLoss:0,reserve:true},roadmap:{t1:40000000,t2:60000000,dcaMonthly:500000,cagr:20,wdYear:6000000,extCash:0},
   buffer:{balance:0,withdrawn:{},log:[]},
   autoBackup:true,lastBackup:null,lastBackupAt:0,lastTryAt:0,lastErrAt:0,
   symbols:[
@@ -357,6 +391,14 @@ function normalize(s){
   if(!Array.isArray(s.buffer.log))s.buffer.log=[];
   if(typeof s.phase==='undefined')s.phase=1;
   if(typeof s.cashKRW!=='number')s.cashKRW=0;
+  s.tax=Object.assign({rate:22,deduct:2500000,carryLoss:0,reserve:true},s.tax||{});
+  if(!Array.isArray(s.ledger))s.ledger=[];
+  // 구버전 적립기록(dca) → 원장으로 1회 이관
+  if(!s._ledgerMigrated){
+    s.symbols.forEach(x=>(x.dca||[]).forEach(d=>{
+      s.ledger.push({type:'IN',date:d.date,amount:d.amount,memo:'적립',dca:true});}));
+    s._ledgerMigrated=true;
+  }
   if(!s.chartRange)s.chartRange='6M';
   if(typeof s.fx!=='number')s.fx=1380;
   if(typeof s.autoBackup==='undefined')s.autoBackup=true;
@@ -525,6 +567,32 @@ function totalAssets(){
   v+=(S.buffer.balance||0);                           // 버퍼 계좌
   return v;
 }
+function totalAfterTax(){
+  const v=totalAssets();
+  return (S.tax&&S.tax.reserve)?v-taxInfo().due:v;
+}
+function principalIn(){   // 총 투입 원금 = 입금 - 출금 (버퍼 이관은 내부 이동이라 제외)
+  return (S.ledger||[]).reduce((a,l)=>a+(l.type==='IN'?l.amount:(l.type==='OUT'?-l.amount:0)),0);
+}
+function thisMonthIn(){   // 이번 달 '적립'만 집계(일회성 목돈 제외)
+  const m=ym();
+  return (S.ledger||[]).filter(l=>l.type==='IN'&&l.dca&&l.date.slice(0,7)===m).reduce((a,l)=>a+l.amount,0);
+}
+function realizedThisYear(y){
+  y=y||new Date().getFullYear();
+  let sum=0;
+  S.symbols.forEach(x=>(x.trades||[]).forEach(t=>{
+    if(t.type==='SELL'&&t.date&&+t.date.slice(0,4)===y)sum+=(t.pnl||0);}));
+  return sum;
+}
+function taxInfo(y){
+  const t=S.tax||{rate:22,deduct:2500000,carryLoss:0};
+  const real=realizedThisYear(y);
+  const after=real-(t.carryLoss||0);          // 이월/기존 손실 차감
+  const base=Math.max(0,after-(t.deduct||0)); // 기본공제
+  const due=base*((t.rate||22)/100);
+  return{real,after,base,due};
+}
 function etaMonths(cur,target,monthly,cagr){
   if(cur>=target)return 0;
   const r=(cagr/100)/12; let v=cur,m=0;
@@ -583,7 +651,7 @@ function render(){
     const val=posValueKRW(inst);
     $('posState').innerHTML='<span class="st in">보유</span> '+inst.pos.date;
     $('posValue').textContent=won(val);
-    $('posPx').textContent=`$${inst.pos.price.toFixed(2)} → $${px.toFixed(2)}`;
+    $('posPx').textContent=`$${inst.pos.price.toFixed(2)} → $${px.toFixed(2)} · ${inst.pos.shares.toFixed(2)}주`;
     $('posPnl').innerHTML=`<span style="color:${pnlPct>=0?'var(--buy)':'var(--danger)'}">`+
       `${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}% (${pnlUsd>=0?'+':''}$${pnlUsd.toFixed(0)})</span>`;
   }else{
@@ -595,7 +663,7 @@ function render(){
 
   // 로드맵
   const rm=S.roadmap;
-  const total=totalAssets();
+  const total=totalAfterTax();
   const tgt=S.phase>=2?rm.t2:rm.t1;
   const pct=Math.min(100,total/tgt*100);
   $('rmTotal').textContent=won(total);
@@ -608,12 +676,35 @@ function render(){
   $('rmAssume').textContent=`가정: 월 적립 ${won(rm.dcaMonthly)} · 연 ${rm.cagr}%`;
   [...$('phaseSeg').children].forEach(b=>b.classList.toggle('on',+b.dataset.ph===S.phase));
 
-  // 적립
-  const thisM=(inst.dca||[]).filter(x=>x.date.slice(0,7)===ym()).reduce((a,b)=>a+b.amount,0);
-  const allD=S.symbols.reduce((a,x)=>a+(x.dca||[]).reduce((p,q)=>p+q.amount,0),0);
-  $('dcaThis').textContent=won(thisM);
-  $('dcaTotal').textContent=won(allD);
-  $('dcaNote').textContent=thisM>=(rm.dcaMonthly||0)?'이번 달 목표 달성 ✓':`목표까지 ${won((rm.dcaMonthly||0)-thisM)}`;
+  // 자금 흐름
+  (function(){
+    const inAmt=principalIn(), now=totalAfterTax(), pnl=now-inAmt;
+    const pct=inAmt>0?(pnl/inAmt*100):0;
+    $('cfIn').textContent=won(inAmt);
+    $('cfNow').textContent=won(now);
+    $('cfPnl').innerHTML=`<span style="color:${pnl>=0?'var(--buy)':'var(--danger)'}">${pnl>=0?'+':''}${won(pnl)}`+
+      (inAmt>0?` (${pnl>=0?'+':''}${pct.toFixed(1)}%)`:'')+`</span>`;
+    const tm=thisMonthIn();
+    $('cfThis').textContent=won(tm);
+    const goal=rm.dcaMonthly||0;
+    $('cfNote').textContent=inAmt<=0?'입금을 기록하면 실제 수익률이 계산됩니다.'
+      :(tm>=goal?`이번 달 적립 목표 달성 ✓ (${won(goal)})`:`이번 달 적립 목표까지 ${won(goal-tm)}`);
+  })();
+
+  // 세금
+  (function(){
+    const y=new Date().getFullYear();
+    const t=S.tax||{}; const ti=taxInfo(y);
+    $('taxYear').textContent=y;
+    $('taxReal').innerHTML=`<span style="color:${ti.real>=0?'var(--buy)':'var(--danger)'}">${ti.real>=0?'+':''}${won(ti.real)}</span>`;
+    $('taxCarry').textContent=(t.carryLoss>0?'−'+won(t.carryLoss):'없음');
+    $('taxBase').textContent=won(ti.base);
+    $('taxDue').innerHTML=ti.due>0?`<span style="color:var(--warn)">${won(ti.due)}</span>`:won(0);
+    $('taxNet').textContent=won(totalAfterTax());
+    $('taxNote').textContent=ti.due>0
+      ? `내년 5월 신고·납부 예정 · ${t.reserve?'총자산에서 차감 표시 중':'총자산에 미반영'}`
+      : (ti.after<0?`올해 순손실 ${won(-ti.after)} — 세금 없음(다음 해 이월은 불가)`:'실현이익이 공제 범위 내 · 세금 없음');
+  })();
 
   // 버퍼
   $('bufCard').style.display=S.phase===3?'':'none';
@@ -623,7 +714,13 @@ function render(){
     $('bufBal').textContent=won(S.buffer.balance);
     $('bufWd').textContent=won(wd)+' / '+won(rm.wdYear);
     $('bufCan').textContent=won(Math.max(0,rm.wdYear-wd));
-    $('bufNote').innerHTML='수익이 목표를 넘으면 <b>초과분은 버퍼로</b>, 손실·부족한 해엔 <b>버퍼에서 인출</b>하세요. 포트폴리오를 건드리지 않는 것이 핵심입니다.';
+    const ti=taxInfo();
+    const netReal=ti.real-ti.due;                 // 세후 실현손익
+    const surplus=netReal-(rm.wdYear||0);         // 인출목표 초과분
+    $('bufNote').innerHTML=
+      `올해 세후 실현손익 <b>${netReal>=0?'+':''}${won(netReal)}</b> · 인출목표 ${won(rm.wdYear)}<br>`+
+      (surplus>0?`→ <b style="color:var(--buy)">초과 ${won(surplus)}</b>을 버퍼로 이관하세요.`
+       :`→ <b style="color:var(--warn)">${won(-surplus)} 부족</b> — 버퍼에서 충당하고 포트폴리오는 건드리지 마세요.`);
   }
 
   // 시세 입력
@@ -710,30 +807,46 @@ $('btnApply').onclick=()=>{
 $('btnIn').onclick=()=>{
   const inst=A();
   if(inst.pos)return toast('이미 보유 중입니다');
-  const px=inst.price;
-  if(px==null)return toast('먼저 현재가를 적용하세요');
-  const krw=prompt(`매수 금액 (원)\n\n${inst.symbol} @ $${px.toFixed(2)} · 환율 ₩${S.fx.toFixed(0)}\n비중 ${inst.cfg.weight}%`,'');
-  if(!krw)return;
+  const hint=inst.price!=null?inst.price.toFixed(2):'';
+  const pxIn=prompt(`매수 체결가 (USD)\n\n${inst.symbol} · 실제 체결된 단가를 입력하세요.`,hint);
+  if(pxIn===null)return;
+  const px=parseFloat(String(pxIn).replace(/[^0-9.]/g,''));
+  if(!(px>0))return toast('체결가 확인');
+  const fxIn=prompt(`적용 환율 (KRW/USD)\n\n실제 적용된 환율을 입력하세요.`,String(Math.round(S.fx)));
+  if(fxIn===null)return;
+  const fx=parseFloat(String(fxIn).replace(/[^0-9.]/g,''))||S.fx;
+  const krw=prompt(`매수 금액 (원)\n\n$${px.toFixed(2)} · 환율 ₩${Math.round(fx)}\n보유 현금 ${won(S.cashKRW||0)}`,
+    String(Math.round(S.cashKRW||0)));
+  if(krw===null)return;
   const amt=parseFloat(String(krw).replace(/[^0-9.]/g,''));
   if(!(amt>0))return toast('금액 확인');
-  const sh=amt/(px*S.fx);
-  inst.pos={date:today(),price:px,shares:sh,krw:amt,fx:S.fx};
-  inst.trades.push({type:'BUY',date:today(),price:px,shares:sh,krw:amt,fx:S.fx});
+  const sh=amt/(px*fx);
+  inst.pos={date:today(),price:px,shares:sh,krw:amt,fx};
+  inst.trades.push({type:'BUY',date:today(),price:px,shares:sh,krw:amt,fx});
   S.cashKRW=Math.max(0,(S.cashKRW||0)-amt);   // 현금 → 포지션
-  save();render();toast(`매수 기록 · ${won(amt)}`);backupSoon();
+  if(inst.price==null)inst.price=px;
+  save();render();toast(`매수 $${px.toFixed(2)} · ${won(amt)}`);backupSoon();
 };
 $('btnOut').onclick=()=>{
   const inst=A();
   if(!inst.pos)return toast('보유 포지션이 없습니다');
-  const px=inst.price||inst.pos.price;
-  const val=inst.pos.shares*px*S.fx;
-  if(!confirm(`전량 매도하시겠습니까?\n\n${inst.symbol} @ $${px.toFixed(2)}\n평가금액 ${won(val)}\n손익 ${((px/inst.pos.price-1)*100).toFixed(1)}%`))return;
+  const hint=(inst.price||inst.pos.price).toFixed(2);
+  const pxIn=prompt(`매도 체결가 (USD)\n\n${inst.symbol} · 진입가 $${inst.pos.price.toFixed(2)}`,hint);
+  if(pxIn===null)return;
+  const px=parseFloat(String(pxIn).replace(/[^0-9.]/g,''));
+  if(!(px>0))return toast('체결가 확인');
+  const fxIn=prompt(`적용 환율 (KRW/USD)`,String(Math.round(S.fx)));
+  if(fxIn===null)return;
+  const fx=parseFloat(String(fxIn).replace(/[^0-9.]/g,''))||S.fx;
+  const val=inst.pos.shares*px*fx;
   const pnl=val-inst.pos.krw;
+  if(!confirm(`전량 매도하시겠습니까?\n\n$${inst.pos.price.toFixed(2)} → $${px.toFixed(2)} (${((px/inst.pos.price-1)*100).toFixed(1)}%)\n`+
+    `수령액 ${won(val)}\n손익 ${pnl>=0?'+':''}${won(pnl)}`))return;
   inst.trades.push({type:'SELL',date:today(),price:px,shares:inst.pos.shares,
-    krw:val,fx:S.fx,entry:inst.pos.price,entryDate:inst.pos.date,pnl});
+    krw:val,fx,entry:inst.pos.price,entryDate:inst.pos.date,pnl});
   inst.pos=null;
   S.cashKRW=(S.cashKRW||0)+val;   // 매도대금 → 현금 환입
-  save();render();toast(`매도 기록 · ${pnl>=0?'+':''}${won(pnl)}`);backupSoon();
+  save();render();toast(`매도 $${px.toFixed(2)} · ${pnl>=0?'+':''}${won(pnl)}`);backupSoon();
 };
 $('btnCash').onclick=()=>{
   const cur=S.cashKRW||0;
@@ -743,16 +856,29 @@ $('btnCash').onclick=()=>{
   if(!(v>=0))return toast('금액 확인');
   S.cashKRW=v;save();render();toast('현금 '+won(v));backupSoon();
 };
-$('btnDca').onclick=()=>{
-  const inst=A();
-  const d=prompt('적립 금액 (원)',String(S.roadmap.dcaMonthly||500000));
-  if(!d)return;
+$('btnIn2').onclick=()=>{
+  const d=prompt(`입금 금액 (원)\n\n월 적립·추가 투입 모두 여기에 기록하세요.`,String(S.roadmap.dcaMonthly||500000));
+  if(d===null)return;
   const amt=parseFloat(String(d).replace(/[^0-9.]/g,''));
   if(!(amt>0))return toast('금액 확인');
-  inst.dca.push({date:today(),amount:amt});
-  S.cashKRW=(S.cashKRW||0)+amt;   // 적립금은 투자 대기 현금으로
-  save();render();toast(`적립 ${won(amt)}`);backupSoon();
+  const isDca=confirm('이번 입금이 "월 적립"인가요?\n\n확인 = 월 적립 (적립 목표에 반영)\n취소 = 일반 입금 (목돈·정리자금 등)');
+  const memo=prompt('메모 (선택)',isDca?'월 적립':'')||'';
+  S.ledger.push({type:'IN',date:today(),amount:amt,memo,dca:isDca});
+  S.cashKRW=(S.cashKRW||0)+amt;
+  save();render();toast(`입금 ${won(amt)}`);backupSoon();
 };
+$('btnOut2').onclick=()=>{
+  const d=prompt(`출금 금액 (원)\n\n보유 현금 ${won(S.cashKRW||0)}`,'');
+  if(d===null)return;
+  const amt=parseFloat(String(d).replace(/[^0-9.]/g,''));
+  if(!(amt>0))return toast('금액 확인');
+  if(amt>(S.cashKRW||0)&&!confirm(`보유 현금(${won(S.cashKRW||0)})보다 많습니다.\n계속할까요?`))return;
+  const memo=prompt('메모 (선택)','')||'';
+  S.ledger.push({type:'OUT',date:today(),amount:amt,memo});
+  S.cashKRW=Math.max(0,(S.cashKRW||0)-amt);
+  save();render();toast(`출금 ${won(amt)}`);backupSoon();
+};
+$('btnLedger').onclick=openLedger;
 $('btnWd').onclick=()=>{
   const y=new Date().getFullYear();
   const done=S.buffer.withdrawn[y]||0;
@@ -813,7 +939,42 @@ function openLog(){
   }
   $('logView').classList.add('show');try{history.pushState({s:1},'');}catch(e){}
 }
-$('btnLog').onclick=openLog;
+function openLedger(){
+  $('logSym').textContent='입출금';
+  const lg=(S.ledger||[]).slice().reverse();
+  const inA=principalIn();
+  if(!lg.length){$('logBody').innerHTML='<div class="card"><span class="mini">입출금 기록이 없습니다.</span></div>';}
+  else{
+    const tin=lg.filter(l=>l.type==='IN').reduce((a,l)=>a+l.amount,0);
+    const tout=lg.filter(l=>l.type==='OUT').reduce((a,l)=>a+l.amount,0);
+    $('logBody').innerHTML=
+      `<div class="card">
+        <div class="row"><span class="k">총 입금</span><b style="color:var(--buy)">+${won(tin)}</b></div>
+        <div class="row"><span class="k">총 출금</span><b style="color:var(--danger)">−${won(tout)}</b></div>
+        <div class="row" style="border-top:1px solid var(--line);margin-top:6px;padding-top:9px">
+          <span class="k">총 투입 원금</span><b>${won(inA)}</b></div>
+        <div class="row"><span class="k">현재 총자산</span><b>${won(totalAfterTax())}</b></div>
+        <div class="row"><span class="k">실제 수익</span><b style="color:${totalAfterTax()-inA>=0?'var(--buy)':'var(--danger)'}">${totalAfterTax()-inA>=0?'+':''}${won(totalAfterTax()-inA)}</b></div>
+      </div>`+
+      `<div class="card">`+lg.map((l,i)=>{
+        const isIn=l.type==='IN';
+        return `<div class="hist"><div class="hist-top">
+          <span><span class="st ${isIn?'in':'out'}">${isIn?(l.dca?'적립':'입금'):'출금'}</span> <span class="faint">${l.date}</span></span>
+          <span style="color:${isIn?'var(--buy)':'var(--danger)'}">${isIn?'+':'−'}${won(l.amount)}
+            <button class="delx" data-lg="${lg.length-1-i}" style="margin-left:6px">×</button></span></div>
+          ${l.memo?`<div class="mini">${l.memo}</div>`:''}</div>`;
+      }).join('')+`</div>`;
+    $('logBody').onclick=e=>{
+      const b=e.target.closest('[data-lg]');if(!b)return;
+      const idx=+b.dataset.lg;const l=S.ledger[idx];if(!l)return;
+      if(!confirm(`${l.date} ${l.type==='IN'?'입금':'출금'} ${won(l.amount)} 기록을 삭제할까요?\n(현금 잔액도 함께 조정됩니다)`))return;
+      S.cashKRW=Math.max(0,(S.cashKRW||0)+(l.type==='IN'?-l.amount:l.amount));
+      S.ledger.splice(idx,1);save();render();openLedger();toast('삭제됨');backupSoon();
+    };
+  }
+  $('logView').classList.add('show');try{history.pushState({s:1},'');}catch(e){}
+}
+$('btnLog').onclick=()=>{$('logBody').onclick=null;openLog();};
 $('btnLogClose').onclick=()=>{$('logView').classList.remove('show');
   if(history.state&&history.state.s){try{history.back();}catch(e){}}};
 
@@ -827,6 +988,9 @@ function openSettings(){
   $('cfgT1').value=rm.t1;$('cfgT2').value=rm.t2;
   $('cfgDca').value=rm.dcaMonthly;$('cfgCagr').value=rm.cagr;
   $('cfgWdY').value=rm.wdYear;$('cfgCash').value=rm.extCash||0;
+  const tx=S.tax||{};
+  $('cfgTaxRate').value=tx.rate;$('cfgTaxDed').value=tx.deduct;
+  $('cfgCarry').value=tx.carryLoss||0;$('chkReserve').checked=!!tx.reserve;
   $('cfgProxy').value=S.proxy||'';
   $('setView').classList.add('show');try{history.pushState({s:1},'');}catch(e){}
 }
@@ -845,6 +1009,10 @@ function collectSettings(){   // 설정 화면의 입력값을 모두 상태에 
     rm.t1=num('cfgT1')||rm.t1; rm.t2=num('cfgT2')||rm.t2;
     rm.dcaMonthly=num('cfgDca'); rm.cagr=num('cfgCagr')||rm.cagr;
     rm.wdYear=num('cfgWdY')||rm.wdYear; rm.extCash=num('cfgCash');
+    S.tax.rate=num('cfgTaxRate')||S.tax.rate;
+    S.tax.deduct=num('cfgTaxDed');
+    S.tax.carryLoss=num('cfgCarry');
+    S.tax.reserve=$('chkReserve').checked;
     S.proxy=($('cfgProxy').value||'').trim();
     save();
   }catch(e){}
@@ -878,6 +1046,14 @@ $('btnSaveRm').onclick=()=>{
   rm.wdYear=num('cfgWdY')||6000000; rm.extCash=num('cfgCash');
   S.proxy=($('cfgProxy').value||'').trim();   // 프록시도 함께 저장(어느 버튼을 눌러도 유실 없음)
   save();render();toast('로드맵 저장');backupSoon();
+};
+$('btnSaveTax').onclick=()=>{
+  const num=id=>parseFloat(String($(id).value).replace(/[^0-9.]/g,''))||0;
+  S.tax.rate=num('cfgTaxRate')||22;
+  S.tax.deduct=num('cfgTaxDed');
+  S.tax.carryLoss=num('cfgCarry');
+  S.tax.reserve=$('chkReserve').checked;
+  save();render();toast('세금 설정 저장');backupSoon();
 };
 $('btnSaveProxy').onclick=()=>{
   S.proxy=($('cfgProxy').value||'').trim();
