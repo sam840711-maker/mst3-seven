@@ -217,7 +217,7 @@
 
   <button class="ghost" style="width:100%;margin-top:4px" id="btnSettings">⚙ 설정 · 백업</button>
   <div class="mini" style="text-align:center;margin-top:14px;line-height:1.6">
-    v1.08 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
+    v1.09 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -571,6 +571,22 @@ function totalAfterTax(){
   const v=totalAssets();
   return (S.tax&&S.tax.reserve)?v-taxInfo().due:v;
 }
+function execGate(inst,act){
+  // 매수 신호의 '실행 가능 여부' 판정 — 신호 자체는 그대로 두고 실행만 제어
+  if(act!=='BUY')return{ok:true};
+  const cash=S.cashKRW||0;
+  const need=Math.round(cash*((inst.cfg.weight||100)/100));
+  const others=S.symbols.filter(x=>x.id!==inst.id&&x.pos);
+  // ① 1단계 회복기에는 IBIT 단일 집중
+  if(S.phase===1&&S.symbols.length>1&&inst.id!==S.symbols[0].id)
+    return{ok:false,why:`1단계 회복기 · ${S.symbols[0].symbol} 집중 권장`,
+      detail:'분산은 2단계(축적기)부터 검토하세요.'};
+  // ② 투입할 현금이 없음
+  if(cash<10000)
+    return{ok:false,why:'투자 대기 현금 없음',
+      detail:others.length?`${others.map(x=>x.symbol).join(', ')}에 투입 중 · 매도 후 전환 가능`:'입금 후 매수하세요.'};
+  return{ok:true,amount:need};
+}
 function principalIn(){   // 총 투입 원금 = 입금 - 출금 (버퍼 이관은 내부 이동이라 제외)
   return (S.ledger||[]).reduce((a,l)=>a+(l.type==='IN'?l.amount:(l.type==='OUT'?-l.amount:0)),0);
 }
@@ -625,10 +641,13 @@ function render(){
   const inPos=!!inst.pos;
   const sig=Engine.signal(closes,cfg,inPos);
   const act=sig.action;
-  $('sigAct').textContent={BUY:'매수',SELL:'매도',HOLD:inPos?'보유':'대기'}[act];
-  $('sigAct').className='big '+act;
-  $('sigChip').textContent=act;$('sigChip').className='chip '+act;
-  $('sigWhy').textContent=sig.reason;
+  const gate=execGate(inst,act);
+  const shown=(act==='BUY'&&!gate.ok)?'HOLD':act;   // 실행 불가면 대기로 표시
+  $('sigAct').textContent=(act==='BUY'&&!gate.ok)?'대기'
+    :{BUY:'매수',SELL:'매도',HOLD:inPos?'보유':'대기'}[act];
+  $('sigAct').className='big '+shown;
+  $('sigChip').textContent=shown;$('sigChip').className='chip '+shown;
+  $('sigWhy').textContent=(act==='BUY'&&!gate.ok)?`${sig.reason} (실행 보류)`:sig.reason;
   if(sig.ma!=null&&inst.price!=null){
     const up=sig.pct>=0;
     $('sigStat').innerHTML=
@@ -638,7 +657,12 @@ function render(){
   }else $('sigStat').textContent='';
   // 경고
   let note='';
-  if(act==='BUY')note=`<div class="note">매수 신호입니다. 자본의 <b>${cfg.weight}%</b>를 ${inst.symbol}에 배정하세요. 실행 후 "매수 기록"을 눌러 주세요.</div>`;
+  if(act==='BUY'&&!gate.ok)
+    note=`<div class="note">⏸ <b>${gate.why}</b><br>${gate.detail||''}<br>`+
+      `<span class="faint">추세는 매수 조건이지만 지금은 실행 대상이 아닙니다.</span></div>`;
+  else if(act==='BUY')
+    note=`<div class="note">매수 신호입니다. 보유 현금 ${won(S.cashKRW||0)} 중 <b>${cfg.weight}%</b>`+
+      (gate.amount?` ≈ ${won(gate.amount)}`:'')+`를 ${inst.symbol}에 배정하세요.<br>실행 후 "매수 기록"을 눌러 주세요.</div>`;
   else if(act==='SELL')note=`<div class="note">매도 신호입니다. <b>전량 매도</b> 후 "매도 기록"을 눌러 주세요.</div>`;
   $('sigNote').innerHTML=note;
   drawChart(inst,sig);
@@ -807,6 +831,8 @@ $('btnApply').onclick=()=>{
 $('btnIn').onclick=()=>{
   const inst=A();
   if(inst.pos)return toast('이미 보유 중입니다');
+  const g=execGate(inst,'BUY');
+  if(!g.ok&&!confirm(`${g.why}\n${g.detail||''}\n\n그래도 매수를 기록할까요?`))return;
   const hint=inst.price!=null?inst.price.toFixed(2):'';
   const pxIn=prompt(`매수 체결가 (USD)\n\n${inst.symbol} · 실제 체결된 단가를 입력하세요.`,hint);
   if(pxIn===null)return;
