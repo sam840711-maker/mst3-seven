@@ -217,7 +217,7 @@
 
   <button class="ghost" style="width:100%;margin-top:4px" id="btnSettings">⚙ 설정 · 백업</button>
   <div class="mini" style="text-align:center;margin-top:14px;line-height:1.6">
-    v1.12 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
+    v1.14 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -747,7 +747,17 @@ function render(){
     const ti=taxInfo();
     const netReal=ti.real-ti.due;                 // 세후 실현손익
     const surplus=netReal-(rm.wdYear||0);         // 인출목표 초과분
-    $('bufNote').innerHTML=
+    const need=(rm.wdYear||0)*2;                  // 권장 버퍼 = 2년치
+    const short=need-(S.buffer.balance||0);
+    let warn='';
+    if(short>0){
+      warn=`<div class="note" style="background:rgba(229,137,77,.1);border-color:rgba(229,137,77,.35);color:#e5a877">`+
+        `⚠ <b>버퍼 부족</b> — 현재 ${won(S.buffer.balance||0)} / 권장 ${won(need)} (2년치)<br>`+
+        `부족 <b>${won(short)}</b> · 인출 시작 전 예금·MMF로 확보하세요.<br>`+
+        `<span class="faint">초반 하락장에서 포트폴리오를 헐지 않으려면 필수입니다. `+
+        `백테스트에서 버퍼 없이 시작하면 첫 2년에 인출 부족이 발생했습니다.</span></div>`;
+    }
+    $('bufNote').innerHTML=warn+
       `올해 세후 실현손익 <b>${netReal>=0?'+':''}${won(netReal)}</b> · 인출목표 ${won(rm.wdYear)}<br>`+
       (surplus>0?`→ <b style="color:var(--buy)">초과 ${won(surplus)}</b>을 버퍼로 이관하세요.`
        :`→ <b style="color:var(--warn)">${won(-surplus)} 부족</b> — 버퍼에서 충당하고 포트폴리오는 건드리지 마세요.`);
@@ -847,8 +857,14 @@ $('btnIn').onclick=()=>{
   const fxIn=prompt(`적용 환율 (KRW/USD)\n\n실제 적용된 환율을 입력하세요.`,String(Math.round(S.fx)));
   if(fxIn===null)return;
   const fx=parseFloat(String(fxIn).replace(/[^0-9.]/g,''))||S.fx;
-  const krw=prompt(`매수 금액 (원)\n\n$${px.toFixed(2)} · 환율 ₩${Math.round(fx)}\n보유 현금 ${won(S.cashKRW||0)}`,
-    String(Math.round(S.cashKRW||0)));
+  const shIn=prompt(`매수 수량 (주)\n\n$${px.toFixed(2)} · 환율 ₩${Math.round(fx)}\n`+
+    `비워두면 금액으로 역산합니다.`,'');
+  if(shIn===null)return;
+  let sh=parseFloat(String(shIn).replace(/[^0-9.]/g,''))||0;
+  const defKrw=sh>0?Math.round(sh*px*fx):Math.round(S.cashKRW||0);
+  const krw=prompt(`매수 금액 (원) — 실제 결제액\n\n`+
+    (sh>0?`${sh}주 × $${px.toFixed(2)} × ₩${Math.round(fx)} ≈ ${won(defKrw)}\n`:'')+
+    `보유 현금 ${won(S.cashKRW||0)}`,String(defKrw));
   if(krw===null)return;
   const amt=parseFloat(String(krw).replace(/[^0-9.]/g,''));
   if(!(amt>0))return toast('금액 확인');
@@ -857,7 +873,7 @@ $('btnIn').onclick=()=>{
       `매수 금액이 보유 현금보다 큽니다.\n\n`+
       `매수 ${won(amt)} · 보유 현금 ${won(cash)}\n부족 ${won(amt-cash)}\n\n`+
       `입금을 먼저 기록하지 않으면 총자산이 실제보다 크게 표시됩니다.\n그래도 진행할까요?`))return;
-  const sh=amt/(px*fx);
+  if(!(sh>0))sh=amt/(px*fx);   // 수량 미입력 시 금액으로 역산
   inst.pos={date:today(),price:px,shares:sh,krw:amt,fx};
   inst.trades.push({type:'BUY',date:today(),price:px,shares:sh,krw:amt,fx});
   S.cashKRW=Math.max(0,(S.cashKRW||0)-amt);   // 현금 → 포지션
@@ -875,13 +891,25 @@ $('btnOut').onclick=()=>{
   const fxIn=prompt(`적용 환율 (KRW/USD)`,String(Math.round(S.fx)));
   if(fxIn===null)return;
   const fx=parseFloat(String(fxIn).replace(/[^0-9.]/g,''))||S.fx;
-  const val=inst.pos.shares*px*fx;
-  const pnl=val-inst.pos.krw;
-  if(!confirm(`전량 매도하시겠습니까?\n\n$${inst.pos.price.toFixed(2)} → $${px.toFixed(2)} (${((px/inst.pos.price-1)*100).toFixed(1)}%)\n`+
+  const held=inst.pos.shares;
+  const shIn=prompt(`매도 수량 (주)\n\n보유 ${held.toFixed(4)}주\n전량 매도하려면 그대로 두세요.`,
+    String(Number(held.toFixed(4))));
+  if(shIn===null)return;
+  let sh=parseFloat(String(shIn).replace(/[^0-9.]/g,''))||held;
+  if(sh>held)sh=held;
+  const partial=sh<held-1e-9;
+  const val=sh*px*fx;
+  const costPart=inst.pos.krw*(sh/held);     // 매도분에 해당하는 원가
+  const pnl=val-costPart;
+  if(!confirm(`${partial?`${sh}주 부분 매도`:'전량 매도'}하시겠습니까?\n\n`+
+    `$${inst.pos.price.toFixed(2)} → $${px.toFixed(2)} (${((px/inst.pos.price-1)*100).toFixed(1)}%)\n`+
     `수령액 ${won(val)}\n손익 ${pnl>=0?'+':''}${won(pnl)}`))return;
-  inst.trades.push({type:'SELL',date:today(),price:px,shares:inst.pos.shares,
-    krw:val,fx,entry:inst.pos.price,entryDate:inst.pos.date,pnl});
-  inst.pos=null;
+  inst.trades.push({type:'SELL',date:today(),price:px,shares:sh,
+    krw:val,fx,entry:inst.pos.price,entryDate:inst.pos.date,pnl,partial});
+  if(partial){
+    inst.pos.shares=held-sh;
+    inst.pos.krw=inst.pos.krw-costPart;
+  }else inst.pos=null;
   S.cashKRW=(S.cashKRW||0)+val;   // 매도대금 → 현금 환입
   save();render();toast(`매도 $${px.toFixed(2)} · ${pnl>=0?'+':''}${won(pnl)}`);backupSoon();
 };
@@ -949,7 +977,16 @@ $('btnBufIn').onclick=()=>{
   save();render();toast(`버퍼 +${won(amt)}`);backupSoon();
 };
 $('phaseSeg').onclick=e=>{const b=e.target.closest('[data-ph]');if(!b)return;
-  S.phase=+b.dataset.ph;save();render();};
+  const ph=+b.dataset.ph;
+  if(ph===3&&S.phase!==3){
+    const need=(S.roadmap.wdYear||0)*2, have=S.buffer.balance||0;
+    if(have<need&&!confirm(
+      `3단계(인출기) 전환 전 확인\n\n`+
+      `권장 버퍼: ${won(need)} (연 인출액 2년치)\n현재 버퍼: ${won(have)}\n부족: ${won(need-have)}\n\n`+
+      `버퍼 없이 시작하면 초반 하락장에서 포트폴리오를 헐게 됩니다.\n`+
+      `그래도 3단계로 전환할까요?`))return;
+  }
+  S.phase=ph;save();render();};
 
 function addSymbol(){
   const sym=prompt('야후 심볼 (예: IBIT, TQQQ, QQQ)','');
